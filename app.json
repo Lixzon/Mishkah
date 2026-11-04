@@ -1,17 +1,20 @@
 {
   "expo": {
     "name": "Mishkah",
-    "slug": "Mishkah",
+    "slug": "mishkah",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "scheme": "mishkah",
+    "userInterfaceStyle": "automatic",
     "ios": {
+      "bundleIdentifier": "com.lixzon.mishkah",
       "supportsTablet": true
     },
     "android": {
+      "package": "com.lixzon.mishkah",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#145B50",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -20,6 +23,11 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-notifications",
+      "expo-splash-screen"
+    ]
   }
 }
