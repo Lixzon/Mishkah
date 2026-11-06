@@ -328,7 +328,7 @@ export default function App() {
         .then((next) => {
           setAuthSession(session);
           setSyncState(next);
-          setAuthMessage('Google account linked successfully.');
+          setAuthMessage('Google sign-in is active on this device.');
         })
         .catch((error: unknown) => setAuthMessage(`Google sign-in could not be saved: ${friendlyError(error, 'secure storage is unavailable')}`))
         .finally(() => setAuthLoading(false));
@@ -1036,7 +1036,7 @@ export default function App() {
                 <View style={styles.moreIcon}><Text style={styles.moreIconText}>◎</Text></View>
                 <View style={styles.moreRowCopy}>
                   <Text style={styles.moreRowTitle}>Account & sync</Text>
-                  <Text style={styles.moreRowDescription}>{authSession ? 'Google account linked' : 'Sign in or continue locally'}</Text>
+                  <Text style={styles.moreRowDescription}>{authSession ? 'Google sign-in active' : 'Sign in or continue locally'}</Text>
                 </View>
                 <Text style={styles.moreArrow}>›</Text>
               </Pressable>
@@ -1205,15 +1205,13 @@ export default function App() {
                   <Text style={styles.syncValue}>
                     {!authSession && syncState?.linkedAccount.linked
                       ? 'Sign-in required'
-                      : authSession && syncApiUrl
-                        ? 'Google connected'
                         : authSession
-                          ? 'Account linked'
+                          ? 'Google sign-in active'
                           : 'Local-only mode'}
                   </Text>
                   <Text style={styles.syncMeta}>{syncState?.status ?? 'idle'} · {syncState?.queuedCount ?? 0} queued updates</Text>
                   {authSession && !syncApiUrl ? (
-                    <Text style={styles.syncMeta}>Sync service is not configured for this build.</Text>
+                    <Text style={styles.syncMeta}>Cross-device sync is unavailable in this build. Your data stays on this device.</Text>
                   ) : null}
                   {authSession ? (
                     <Text style={styles.syncMeta}>Signed in as {authSession.email ?? authSession.name ?? 'Google user'}</Text>
@@ -1228,10 +1226,11 @@ export default function App() {
                 ) : (
                   <View style={styles.inlineActions}>
                     <ActionButton
-                      label="Sync now"
+                      label={syncApiUrl ? 'Sync now' : 'Sync unavailable'}
                       onPress={() => void handleSyncNow()}
                       palette={palette}
                       styles={styles}
+                      disabled={!syncApiUrl}
                     />
                     <ActionButton
                       label="Sign out"
@@ -1417,12 +1416,12 @@ export default function App() {
             </View>
             <View style={styles.syncCard}>
               <Text style={styles.syncLabel}>ACCOUNT STATUS</Text>
-              <Text style={styles.syncValue}>{authSession ? 'Google connected' : 'Local-only mode'}</Text>
+              <Text style={styles.syncValue}>{authSession ? 'Google sign-in active' : 'Local-only mode'}</Text>
               <Text style={styles.syncMeta}>
                 {authSession?.email ?? authSession?.name ?? 'Your settings remain on this device.'}
               </Text>
               {authSession && !syncApiUrl ? (
-                <Text style={styles.syncMeta}>Cross-device sync service is not configured.</Text>
+                <Text style={styles.syncMeta}>Cross-device sync is unavailable in this build. Your data stays on this device.</Text>
               ) : null}
             </View>
             {!authSession ? (
@@ -1434,10 +1433,11 @@ export default function App() {
             ) : (
               <View style={styles.inlineActions}>
                 <ActionButton
-                  label="Sync now"
+                  label={syncApiUrl ? 'Sync now' : 'Sync unavailable'}
                   onPress={() => void handleSyncNow()}
                   palette={palette}
                   styles={styles}
+                  disabled={!syncApiUrl}
                 />
                 <ActionButton
                   label="Sign out"
