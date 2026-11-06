@@ -55,19 +55,22 @@ import {
 } from './src/services/preferences';
 import { schedulePrayerReminders } from './src/services/notifications';
 import { GoogleSignInButton } from './src/components/GoogleSignInButton';
+import { AiAssistantBar, type AssistantDestination } from './src/components/AiAssistantBar';
+import { WorshipHub, type WorshipTab } from './src/components/WorshipHub';
 import { clearAuthSession, isAuthSessionExpired, loadAuthSession, saveAuthSession } from './src/services/auth';
 import {
   connectGoogleAccount,
   disconnectGoogleAccount,
   flushSyncQueue,
   readSyncState,
+  refreshFurqanProgress,
   syncEngagement,
   type SyncState,
 } from './src/services/syncEngine';
 
 WebBrowser.maybeCompleteAuthSession();
 
-type Screen = 'Prayer' | 'Global' | 'Fasting' | 'Guide' | 'Settings';
+type Screen = 'Prayer' | 'Global' | 'Fasting' | 'Guide' | 'More' | 'Worship' | 'Settings';
 type Palette = {
   background: string;
   surface: string;
@@ -82,7 +85,7 @@ type Palette = {
   danger: string;
 };
 
-const PALETTES: Record<'light' | 'dark', Palette> = {
+const PALETTES: Record<'light' | 'dark' | 'midnight', Palette> = {
   light: {
     background: '#F3F5F1',
     surface: '#FFFFFF',
@@ -107,6 +110,19 @@ const PALETTES: Record<'light' | 'dark', Palette> = {
     accentInk: '#10221E',
     gold: '#E3B66F',
     goldTint: '#302D25',
+    danger: '#F2A5A5',
+  },
+  midnight: {
+    background: '#121925',
+    surface: '#1C2634',
+    surfaceRaised: '#273544',
+    ink: '#E8F0F2',
+    muted: '#A2B3BC',
+    line: '#344555',
+    accent: '#7BC5D0',
+    accentInk: '#10242A',
+    gold: '#E1B96E',
+    goldTint: '#343126',
     danger: '#F2A5A5',
   },
 };
@@ -185,6 +201,8 @@ export default function App() {
   const [notice, setNotice] = useState('');
   const [cityQuery, setCityQuery] = useState('');
   const [capacityModalVisible, setCapacityModalVisible] = useState(false);
+  const [profileModalVisible, setProfileModalVisible] = useState(false);
+  const [worshipTab, setWorshipTab] = useState<WorshipTab>('Hadith');
   const [guideQuery, setGuideQuery] = useState('');
   const [guideAnswer, setGuideAnswer] = useState(getLocalAnswer(''));
   const [healthMessage, setHealthMessage] = useState('');
@@ -273,6 +291,21 @@ export default function App() {
     const interval = setInterval(() => setNow(new Date()), 30_000);
     return () => clearInterval(interval);
   }, [appState]);
+
+  useEffect(() => {
+    if (appState !== 'active' || !authSession || !syncApiUrl) return;
+    let active = true;
+    void refreshFurqanProgress(authSession.idToken)
+      .then((next) => {
+        if (active && next) setSyncState(next);
+      })
+      .catch((error: unknown) => {
+        if (active) setAuthMessage(`Furqan progress could not refresh: ${friendlyError(error, 'sync service unavailable')}`);
+      });
+    return () => {
+      active = false;
+    };
+  }, [appState, authSession?.idToken, syncApiUrl]);
 
   useEffect(() => {
     if (response?.type === 'success') {
@@ -522,7 +555,8 @@ export default function App() {
   const handleSyncNow = async () => {
     try {
       const next = await flushSyncQueue(authSession?.idToken ?? '');
-      setSyncState(next);
+      const progress = await refreshFurqanProgress(authSession?.idToken ?? '');
+      setSyncState(progress ?? next);
       setNotice(next.queuedCount ? `${next.queuedCount} updates are still waiting for sync.` : 'Your queued updates are synced.');
     } catch (error) {
       setNotice(friendlyError(error, 'Sync could not complete. Your updates remain queued on this device.'));
@@ -560,7 +594,7 @@ export default function App() {
   if (!isReady || !city || !prayerTimes || !nextPrayer) {
     return (
       <SafeAreaView style={styles.splashPage}>
-        <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
+        <StatusBar style={theme === 'light' ? 'dark' : 'light'} />
         <View />
         <View style={styles.splashCenter}>
           <View style={styles.splashMark}>
@@ -580,7 +614,7 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
+      <StatusBar style={theme === 'light' ? 'dark' : 'light'} />
       <View style={styles.screen}>
         <View style={styles.topBar}>
           <Pressable
@@ -597,33 +631,30 @@ export default function App() {
               <Text style={styles.brandCaption}>A little light, wherever you are</Text>
             </View>
           </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Change your city"
-            onPress={() => setScreen('Global')}
-            style={styles.locationButton}
-          >
-            <Text style={styles.locationLabel}>YOUR CITY</Text>
-            <Text style={styles.locationName} numberOfLines={1}>
-              {city.name}⌄
-            </Text>
-          </Pressable>
-        </View>
-
-        <View style={styles.tabBar}>
-          {(['Prayer', 'Global', 'Fasting', 'Guide', 'Settings'] as const).map((tab) => (
+          <View style={styles.headerActions}>
             <Pressable
-              accessibilityRole="tab"
-              accessibilityState={{ selected: screen === tab }}
-              key={tab}
-              onPress={() => setScreen(tab)}
-              style={[styles.tab, screen === tab && styles.activeTab]}
+              accessibilityRole="button"
+              accessibilityLabel="Change your city"
+              onPress={() => setScreen('Global')}
+              style={styles.locationButton}
             >
-              <Text style={[styles.tabLabel, screen === tab && styles.activeTabLabel]}>
-                {tab === 'Settings' ? 'More' : tab}
+              <Text style={styles.locationLabel}>YOUR CITY</Text>
+              <Text style={styles.locationName} numberOfLines={1}>
+                {city.name}⌄
               </Text>
             </Pressable>
-          ))}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Open profile and Google sign in"
+              onPress={() => setProfileModalVisible(true)}
+              style={styles.profileButton}
+            >
+              <View style={styles.profileGlyph}>
+                <Text style={styles.profileGlyphText}>◎</Text>
+              </View>
+              <Text style={styles.profileLabel}>Profile</Text>
+            </Pressable>
+          </View>
         </View>
 
         <ScrollView
@@ -982,6 +1013,120 @@ export default function App() {
             </>
           ) : null}
 
+          {screen === 'Worship' ? (
+            <WorshipHub
+              preferences={preferences}
+              palette={palette}
+              date={localDate}
+              initialTab={worshipTab}
+              featuresUnlocked={syncState?.featuresUnlocked ?? ['basic-guidance']}
+              onPreferencesChange={changePreferences}
+              onNotice={setNotice}
+            />
+          ) : null}
+
+          {screen === 'More' ? (
+            <>
+              <View style={styles.introBlock}>
+                <Text style={styles.eyebrow}>YOUR MISHKAH</Text>
+                <Text style={styles.pageTitle}>More to explore.</Text>
+                <Text style={styles.bodyText}>A clear home for worship tools, learning, and app settings.</Text>
+              </View>
+              <Pressable accessibilityRole="button" onPress={() => setProfileModalVisible(true)} style={styles.moreAccountRow}>
+                <View style={styles.moreIcon}><Text style={styles.moreIconText}>◎</Text></View>
+                <View style={styles.moreRowCopy}>
+                  <Text style={styles.moreRowTitle}>Account & sync</Text>
+                  <Text style={styles.moreRowDescription}>{authSession ? 'Google account linked' : 'Sign in or continue locally'}</Text>
+                </View>
+                <Text style={styles.moreArrow}>›</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Explore Furqan, the companion Quran app"
+                onPress={() => void openSupportLink('https://furqan-quran-app.vercel.app/')}
+                style={styles.moreAccountRow}
+              >
+                <View style={styles.moreIcon}><Text style={styles.moreIconText}>۞</Text></View>
+                <View style={styles.moreRowCopy}>
+                  <Text style={styles.moreRowTitle}>Explore Furqan</Text>
+                  <Text style={styles.moreRowDescription}>Your companion Qur’an reading app by LIXZON</Text>
+                </View>
+                <Text style={styles.moreArrow}>↗</Text>
+              </Pressable>
+              <View style={styles.streakPanel}>
+                <View style={styles.streakHeading}>
+                  <View>
+                    <Text style={styles.moreRowTitle}>Furqan reading streak</Text>
+                    <Text style={styles.moreRowDescription}>
+                      {syncApiUrl ? 'Verified progress refreshes when your account connects.' : 'Connect a shared sync service to import verified Furqan progress.'}
+                    </Text>
+                  </View>
+                  <Text style={styles.streakCount}>{syncState?.streak ?? 0}<Text style={styles.streakUnit}> days</Text></Text>
+                </View>
+                {([
+                  { id: 'extended-hadith', days: 7, label: 'Expanded Hadith collection' },
+                  { id: 'premium-theme-collection', days: 14, label: 'Premium theme collection' },
+                  { id: 'reciter-library', days: 21, label: 'Audio reciter library' },
+                ] as const).map((reward) => {
+                  const unlocked = syncState?.featuresUnlocked.includes(reward.id) === true;
+                  return (
+                    <View key={reward.id} style={styles.rewardRow}>
+                      <Text style={[styles.rewardMark, unlocked && styles.rewardMarkUnlocked]}>{unlocked ? '✓' : '·'}</Text>
+                      <Text style={styles.rewardLabel}>{reward.label}</Text>
+                      <Text style={styles.rewardRequirement}>{unlocked ? 'Unlocked' : `${reward.days} days`}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+              <View style={styles.moreSectionHeading}>
+                <Text style={styles.sectionTitle}>Worship & learning</Text>
+                <Text style={styles.sectionCaption}>Offline collections and daily practice</Text>
+              </View>
+              <View style={styles.moreToolGrid}>
+                {([
+                  { tab: 'Hadith', icon: '۞', title: 'Hadith', description: 'Daily teaching and collections' },
+                  { tab: 'Tasbeeh', icon: '◉', title: 'Tasbeeh', description: 'Dhikr counter and custom phrases' },
+                  { tab: 'Adhkar', icon: '☼', title: 'Daily Adhkar', description: 'Morning and evening routine' },
+                  { tab: 'Duas', icon: '✧', title: 'Dua library', description: 'Find a prayer by context' },
+                  { tab: 'Reciters', icon: '▶', title: 'Reciters', description: 'Stream Qur’an recitations' },
+                ] as const).map((tool) => (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Open ${tool.title}`}
+                    key={tool.tab}
+                    onPress={() => {
+                      setWorshipTab(tool.tab);
+                      setScreen('Worship');
+                    }}
+                    style={styles.moreTool}
+                  >
+                    <View style={styles.moreIcon}><Text style={styles.moreIconText}>{tool.icon}</Text></View>
+                    <Text style={styles.moreRowTitle}>{tool.title}</Text>
+                    <Text style={styles.moreRowDescription}>{tool.description}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <View style={styles.moreSectionHeading}>
+                <Text style={styles.sectionTitle}>Daily life</Text>
+              </View>
+              {([
+                { title: 'Fasting routine', detail: 'Suhoor, iftar, and your checklist', icon: '☾', target: 'Fasting' },
+                { title: 'Prayer cities', detail: 'Browse and pin places around the world', icon: '◎', target: 'Global' },
+                { title: 'Mishkah Guide', detail: 'Local answers and spiritual reminders', icon: '✦', target: 'Guide' },
+                { title: 'Settings', detail: 'Appearance, prayer method, diagnostics', icon: '⚙', target: 'Settings' },
+              ] as const).map((item) => (
+                <Pressable accessibilityRole="button" key={item.target} onPress={() => setScreen(item.target)} style={styles.moreListRow}>
+                  <View style={styles.moreListIcon}><Text style={styles.moreIconText}>{item.icon}</Text></View>
+                  <View style={styles.moreRowCopy}>
+                    <Text style={styles.moreRowTitle}>{item.title}</Text>
+                    <Text style={styles.moreRowDescription}>{item.detail}</Text>
+                  </View>
+                  <Text style={styles.moreArrow}>›</Text>
+                </Pressable>
+              ))}
+            </>
+          ) : null}
+
           {screen === 'Settings' ? (
             <>
               <View style={styles.introBlock}>
@@ -995,23 +1140,26 @@ export default function App() {
                 <Text style={styles.settingGroupTitle}>Appearance</Text>
                 <Text style={styles.settingDescription}>Choose a calm, easy-on-the-eyes palette.</Text>
                 <View style={styles.choiceRow}>
-                  {(['light', 'dark'] as const).map((appearance) => (
-                    <Pressable
-                      key={appearance}
-                      onPress={() =>
-                        changePreferences((current) => ({ ...current, theme: appearance }))
-                      }
-                      style={[
-                        styles.choice,
-                        theme === appearance && styles.selectedChoice,
-                      ]}
-                    >
-                      <Text style={[styles.choiceText, theme === appearance && styles.selectedChoiceText]}>
-                        {appearance === 'light' ? 'Daylight' : 'Night'}
-                      </Text>
-                    </Pressable>
-                  ))}
+                  {(['light', 'dark', 'midnight'] as const).map((appearance) => {
+                    const locked = appearance === 'midnight' && !syncState?.featuresUnlocked.includes('premium-theme-collection');
+                    const label = appearance === 'light' ? 'Daylight' : appearance === 'dark' ? 'Night' : locked ? 'Midnight · 14d' : 'Midnight';
+                    return (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: theme === appearance, disabled: locked }}
+                        disabled={locked}
+                        key={appearance}
+                        onPress={() => changePreferences((current) => ({ ...current, theme: appearance }))}
+                        style={[styles.choice, theme === appearance && styles.selectedChoice, locked && styles.lockedChoice]}
+                      >
+                        <Text style={[styles.choiceText, theme === appearance && styles.selectedChoiceText]}>
+                          {label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
                 </View>
+                <Text style={styles.helperText}>Midnight unlocks after a verified 14-day Furqan reading streak.</Text>
               </View>
               <View style={styles.settingsCard}>
                 <Text style={styles.settingGroupTitle}>Prayer calculations</Text>
@@ -1191,7 +1339,129 @@ export default function App() {
             <Text style={styles.footerBrand}>by LIXZON</Text>
           </View>
         </ScrollView>
+        <AiAssistantBar
+          palette={palette}
+          onNavigate={(destination: AssistantDestination, query: string) => {
+            if (destination === 'Worship') {
+              const normalized = query.toLocaleLowerCase();
+              setWorshipTab(/tasbeeh|tasbih|dhikr|adhkar|remembrance/.test(normalized)
+                ? 'Tasbeeh'
+                : /reciter|audio quran|quran audio/.test(normalized)
+                  ? 'Reciters'
+                  : /dua|supplication|travel|sleep/.test(normalized)
+                  ? 'Duas'
+                  : 'Hadith');
+              setScreen('Worship');
+              return;
+            }
+            setScreen(destination as Screen);
+            if (destination === 'Guide') askGuide(query);
+          }}
+        />
+        <View style={styles.bottomNav}>
+          {([
+            { screen: 'Prayer', label: 'Prayer', icon: '⌂' },
+            { screen: 'Global', label: 'Global', icon: '◎' },
+            { screen: 'Fasting', label: 'Fasting', icon: '☾' },
+            { screen: 'Guide', label: 'Guide', icon: '✦' },
+            { screen: 'More', label: 'More', icon: '•••' },
+          ] as const).map((tab) => (
+            <Pressable
+              accessibilityRole="tab"
+              accessibilityState={{ selected: tab.screen === 'More'
+                ? screen === 'More' || screen === 'Settings' || screen === 'Worship'
+                : screen === tab.screen }}
+              key={tab.screen}
+              onPress={() => setScreen(tab.screen)}
+              style={[styles.bottomTab, (screen === tab.screen || (tab.screen === 'More' && ['Settings', 'Worship'].includes(screen))) && styles.bottomTabActive]}
+            >
+              <Text style={[styles.bottomTabIcon, screen === tab.screen && styles.bottomTabIconActive]}>
+                {tab.icon}
+              </Text>
+              <Text style={[styles.bottomTabLabel, screen === tab.screen && styles.bottomTabLabelActive]}>
+                {tab.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
       </View>
+
+      <Modal
+        animationType="slide"
+        onRequestClose={() => setProfileModalVisible(false)}
+        transparent
+        visible={profileModalVisible}
+      >
+        <View style={styles.profileBackdrop}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Close profile"
+            onPress={() => setProfileModalVisible(false)}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={styles.profileDrawer}>
+            <View style={styles.profileDrawerHandle} />
+            <View style={styles.profileDrawerHeading}>
+              <View>
+                <Text style={styles.settingGroupTitle}>Your account</Text>
+                <Text style={styles.settingDescription}>Keep your progress close across devices.</Text>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close profile"
+                onPress={() => setProfileModalVisible(false)}
+                style={styles.profileCloseButton}
+              >
+                <Text style={styles.profileCloseText}>×</Text>
+              </Pressable>
+            </View>
+            <View style={styles.syncCard}>
+              <Text style={styles.syncLabel}>ACCOUNT STATUS</Text>
+              <Text style={styles.syncValue}>{authSession ? 'Google connected' : 'Local-only mode'}</Text>
+              <Text style={styles.syncMeta}>
+                {authSession?.email ?? authSession?.name ?? 'Your settings remain on this device.'}
+              </Text>
+              {authSession && !syncApiUrl ? (
+                <Text style={styles.syncMeta}>Cross-device sync service is not configured.</Text>
+              ) : null}
+            </View>
+            {!authSession ? (
+              <GoogleSignInButton
+                label="Sign in with Google"
+                loading={authLoading}
+                onPress={() => void handleGoogleSignIn()}
+              />
+            ) : (
+              <View style={styles.inlineActions}>
+                <ActionButton
+                  label="Sync now"
+                  onPress={() => void handleSyncNow()}
+                  palette={palette}
+                  styles={styles}
+                />
+                <ActionButton
+                  label="Sign out"
+                  onPress={() => void handleGoogleSignOut()}
+                  palette={palette}
+                  styles={styles}
+                />
+              </View>
+            )}
+            {authMessage ? <Text style={styles.healthMessage}>{authMessage}</Text> : null}
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => {
+                setProfileModalVisible(false);
+                setScreen('Settings');
+              }}
+              style={styles.profileSettingsLink}
+            >
+              <Text style={styles.textLink}>Open all settings</Text>
+              <Text style={styles.faqArrow}>↗</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         animationType="fade"
@@ -1313,7 +1583,7 @@ function createStyles(colors: Palette) {
     },
     splashSpinner: { marginTop: 26 },
     splashFooter: { color: colors.muted, fontSize: 9, fontWeight: '600', letterSpacing: 3 },
-    screen: { flex: 1 },
+    screen: { flex: 1, width: '100%', maxWidth: 760, alignSelf: 'center' },
     topBar: {
       minHeight: 76,
       paddingHorizontal: 22,
@@ -1335,27 +1605,55 @@ function createStyles(colors: Palette) {
     brandSpark: { color: colors.accentInk, fontSize: 20 },
     brandName: { color: colors.ink, fontSize: 19, fontWeight: '700', letterSpacing: 0.1 },
     brandCaption: { color: colors.muted, fontSize: 10, marginTop: 2 },
+    headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     locationButton: {
-      maxWidth: '43%',
+      maxWidth: '55%',
       alignItems: 'flex-end',
       paddingVertical: 7,
       paddingLeft: 12,
     },
     locationLabel: { color: colors.muted, fontSize: 9, fontWeight: '700', letterSpacing: 1.5 },
     locationName: { color: colors.ink, fontSize: 13, fontWeight: '600', marginTop: 4 },
-    tabBar: {
-      marginHorizontal: 16,
-      marginBottom: 13,
-      padding: 4,
-      borderRadius: 18,
+    profileButton: { minWidth: 43, alignItems: 'center', justifyContent: 'center', paddingVertical: 4 },
+    profileGlyph: {
+      width: 31,
+      height: 31,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
       backgroundColor: colors.surfaceRaised,
-      flexDirection: 'row',
-      justifyContent: 'space-between',
     },
-    tab: { flex: 1, minHeight: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 14 },
-    activeTab: { backgroundColor: colors.surface },
-    tabLabel: { color: colors.muted, fontSize: 10, fontWeight: '600' },
-    activeTabLabel: { color: colors.accent, fontWeight: '700' },
+    profileGlyphText: { color: colors.accent, fontSize: 17, fontWeight: '600' },
+    profileLabel: { color: colors.muted, fontSize: 8, fontWeight: '600', marginTop: 2 },
+    bottomNav: {
+      minHeight: 65,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.line,
+      backgroundColor: colors.surface,
+      flexDirection: 'row',
+      alignItems: 'stretch',
+      paddingHorizontal: 6,
+      paddingTop: 5,
+      paddingBottom: 4,
+      elevation: 10,
+      shadowColor: '#000000',
+      shadowOpacity: 0.06,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: -3 },
+    },
+    bottomTab: {
+      flex: 1,
+      minWidth: 54,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderTopWidth: 2,
+      borderTopColor: 'transparent',
+    },
+    bottomTabActive: { borderTopColor: colors.accent },
+    bottomTabIcon: { color: colors.muted, fontSize: 17, lineHeight: 21, minHeight: 22 },
+    bottomTabIconActive: { color: colors.accent },
+    bottomTabLabel: { color: colors.muted, fontSize: 9, fontWeight: '600', marginTop: 1 },
+    bottomTabLabelActive: { color: colors.accent, fontWeight: '700' },
     content: { paddingHorizontal: 20, paddingTop: 7, paddingBottom: 32 },
     notice: {
       paddingVertical: 12,
@@ -1610,6 +1908,114 @@ function createStyles(colors: Palette) {
     disclaimerTitle: { color: colors.ink, fontSize: 12, fontWeight: '600' },
     disclaimerText: { color: colors.muted, fontSize: 11, lineHeight: 17, marginTop: 5 },
     settingsCard: { backgroundColor: colors.surface, borderRadius: 18, padding: 16, marginBottom: 12 },
+    moreAccountRow: {
+      minHeight: 67,
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 13,
+      borderRadius: 15,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.line,
+    },
+    streakPanel: { marginTop: 10, paddingHorizontal: 13, paddingVertical: 12, borderRadius: 15, backgroundColor: colors.surfaceRaised },
+    streakHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingBottom: 8 },
+    streakCount: { color: colors.accent, fontSize: 24, fontWeight: '700' },
+    streakUnit: { color: colors.muted, fontSize: 9, fontWeight: '500' },
+    rewardRow: { minHeight: 32, flexDirection: 'row', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line },
+    rewardMark: { width: 21, color: colors.muted, fontSize: 16, fontWeight: '700' },
+    rewardMarkUnlocked: { color: colors.accent },
+    rewardLabel: { flex: 1, color: colors.ink, fontSize: 10 },
+    rewardRequirement: { color: colors.muted, fontSize: 9 },
+    moreSectionHeading: { marginTop: 22, marginBottom: 9 },
+    moreToolGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 },
+    moreTool: {
+      flexGrow: 1,
+      flexBasis: '47%',
+      minWidth: 145,
+      minHeight: 112,
+      padding: 13,
+      borderRadius: 15,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.line,
+    },
+    moreListRow: {
+      minHeight: 61,
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 8,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.line,
+    },
+    moreListIcon: {
+      width: 34,
+      height: 34,
+      borderRadius: 12,
+      marginRight: 11,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.surfaceRaised,
+    },
+    moreIcon: {
+      width: 35,
+      height: 35,
+      borderRadius: 13,
+      marginRight: 11,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.surfaceRaised,
+    },
+    moreIconText: { color: colors.accent, fontSize: 17, fontWeight: '600' },
+    moreRowCopy: { flex: 1, minWidth: 0 },
+    moreRowTitle: { color: colors.ink, fontSize: 12, fontWeight: '600' },
+    moreRowDescription: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 3 },
+    moreArrow: { color: colors.muted, fontSize: 20, paddingHorizontal: 5 },
+    profileBackdrop: {
+      flex: 1,
+      justifyContent: 'flex-end',
+      backgroundColor: '#07161588',
+    },
+    profileDrawer: {
+      width: '100%',
+      maxWidth: 760,
+      alignSelf: 'center',
+      paddingHorizontal: 20,
+      paddingTop: 11,
+      paddingBottom: 24,
+      borderTopLeftRadius: 22,
+      borderTopRightRadius: 22,
+      backgroundColor: colors.surface,
+    },
+    profileDrawerHandle: {
+      width: 38,
+      height: 4,
+      borderRadius: 3,
+      backgroundColor: colors.line,
+      alignSelf: 'center',
+      marginBottom: 17,
+    },
+    profileDrawerHeading: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    profileCloseButton: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      backgroundColor: colors.surfaceRaised,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    profileCloseText: { color: colors.muted, fontSize: 22, lineHeight: 24 },
+    profileSettingsLink: {
+      minHeight: 42,
+      marginTop: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
     settingGroupTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
     settingDescription: { color: colors.muted, fontSize: 11, lineHeight: 17, marginTop: 5 },
     syncCard: {
@@ -1638,6 +2044,7 @@ function createStyles(colors: Palette) {
       justifyContent: 'center',
     },
     selectedChoice: { borderColor: colors.accent, backgroundColor: colors.surfaceRaised },
+    lockedChoice: { opacity: 0.52 },
     choiceText: { color: colors.muted, fontSize: 11 },
     selectedChoiceText: { color: colors.accent, fontWeight: '700' },
     methodGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 13 },

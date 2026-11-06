@@ -1,19 +1,25 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DEFAULT_CITY_IDS, MAX_PINNED_CITIES } from '../domain/cities';
 import type { CalculationMethod } from '../domain/prayer';
+import type { CustomDhikr } from '../domain/tasbeeh';
 
 const PREFERENCES_KEY = 'mishkah.preferences.v1';
 
 export type AppPreferences = {
   pinnedCityIds: string[];
   selectedCityId: string;
-  theme: 'light' | 'dark';
+  theme: 'light' | 'dark' | 'midnight';
   calculationMethod: CalculationMethod;
   fajrAlarm: boolean;
   iftarAlarm: boolean;
   alarmLeadMinutes: 45 | 50 | 60;
   checklistDate: string;
   completedChecklistItems: string[];
+  customDhikr: CustomDhikr[];
+  tasbeehDate: string;
+  tasbeehCounts: Record<string, number>;
+  adhkarDate: string;
+  adhkarCounts: Record<string, number>;
 };
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
@@ -26,10 +32,44 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   alarmLeadMinutes: 45,
   checklistDate: '',
   completedChecklistItems: [],
+  customDhikr: [],
+  tasbeehDate: '',
+  tasbeehCounts: {},
+  adhkarDate: '',
+  adhkarCounts: {},
 };
 
 function isCalculationMethod(value: unknown): value is CalculationMethod {
   return value === 'MWL' || value === 'ISNA' || value === 'Egyptian' || value === 'Umm al-Qura';
+}
+
+function normalizeCounts(value: unknown): Record<string, number> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter((entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isFinite(entry[1]))
+      .map(([id, count]) => [id, Math.max(0, Math.min(1000, Math.floor(count)))]),
+  );
+}
+
+function normalizeCustomDhikr(value: unknown): CustomDhikr[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is CustomDhikr =>
+      typeof item === 'object' && item !== null &&
+      typeof item.id === 'string' && typeof item.label === 'string' &&
+      (item.target === 33 || item.target === 100) &&
+      typeof item.createdAt === 'number' && Number.isFinite(item.createdAt),
+    )
+    .slice(0, 30)
+    .map((item) => ({
+      id: item.id,
+      label: item.label.trim().slice(0, 60),
+      ...(typeof item.arabic === 'string' ? { arabic: item.arabic.slice(0, 180) } : {}),
+      target: item.target,
+      createdAt: item.createdAt,
+    }))
+    .filter((item) => item.label.length > 0);
 }
 
 function normalizePreferences(value: unknown): AppPreferences {
@@ -52,7 +92,7 @@ function normalizePreferences(value: unknown): AppPreferences {
   return {
     pinnedCityIds,
     selectedCityId,
-    theme: input.theme === 'dark' ? 'dark' : 'light',
+    theme: input.theme === 'midnight' ? 'midnight' : input.theme === 'dark' ? 'dark' : 'light',
     calculationMethod: isCalculationMethod(input.calculationMethod)
       ? input.calculationMethod
       : DEFAULT_PREFERENCES.calculationMethod,
@@ -66,6 +106,11 @@ function normalizePreferences(value: unknown): AppPreferences {
     completedChecklistItems: Array.isArray(input.completedChecklistItems)
       ? input.completedChecklistItems.filter((item): item is string => typeof item === 'string')
       : [],
+    customDhikr: normalizeCustomDhikr(input.customDhikr),
+    tasbeehDate: typeof input.tasbeehDate === 'string' ? input.tasbeehDate : '',
+    tasbeehCounts: normalizeCounts(input.tasbeehCounts),
+    adhkarDate: typeof input.adhkarDate === 'string' ? input.adhkarDate : '',
+    adhkarCounts: normalizeCounts(input.adhkarCounts),
   };
 }
 

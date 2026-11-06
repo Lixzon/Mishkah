@@ -30,7 +30,7 @@ npm run web:serve
 
 The public website is deployed from `main` to
 https://lixzon.github.io/Mishkah/ by the GitHub Pages workflow. The web version
-uses the same offline prayer calculations, guide, and saved preferences. Native
+uses the same offline prayer calculations, guide, worship library, and saved preferences. Native
 scheduled notifications and encrypted device diagnostics remain available only
 in the iOS and Android apps.
 
@@ -44,6 +44,23 @@ Android Chrome, choose **Install app** from the browser menu; on iPhone, open
 the site in Safari and choose **Add to Home Screen** from Share. The PWA caches
 the app shell for offline launching after its first successful load. This
 installs the website as a home-screen app; it is not an APK or App Store binary.
+
+### Worship library
+
+The **More** section groups Hadith, Tasbeeh, daily Adhkar, Duas, reciters, and
+settings. The Hadith library includes 40 short teaching summaries attributed
+to the Nawawi collection plus selected Sahih Bukhari/Muslim summaries. Those
+summaries are not verbatim translations; references are shown with each entry.
+The Bukhari/Muslim selection unlocks at a verified seven-day Furqan streak.
+Morning/evening remembrance and the Hisn al-Muslim Dua selection include Arabic,
+transliteration, concise meanings, repetition counts, and references. The
+Tasbeeh counter and custom Dhikr persist locally. Reciter audio is streamed and
+requires a network connection; the reciter library unlocks at 21 days.
+
+These are curated offline selections, not a complete scholarly edition of
+Hisn al-Muslim or a substitute for checking religious rulings with a trusted
+scholar. English wording is concise explanatory meaning, not a published
+translation.
 
 ### Google account and cross-device sync
 
@@ -59,9 +76,15 @@ Native ID tokens are stored with SecureStore. Browser sign-in is kept in memory;
 the app does not persist bearer tokens in browser storage. Queued updates stay
 local unless `EXPO_PUBLIC_SYNC_API_URL` points to a configured HTTPS service.
 That endpoint must verify the Google ID token, durably store accepted events,
-and return JSON shaped as `{ "acceptedIds": ["event-id"] }`. The client only
-removes events explicitly acknowledged by the service. Without that service,
-account linking can work but cross-device sync remains unavailable.
+and return JSON shaped as `{ "acceptedIds": ["event-id"] }` to the client’s
+POST request. To provide Furqan streaks, the same service must support an
+authenticated GET at `?resource=furqan-progress` and return
+`{ "furqanProgress": { "currentStreak": 7, "highestStreak": 7 } }`. The
+client only removes events explicitly acknowledged by the service and only
+unlocks milestone features from a validated response. Without that service,
+account linking can work but cross-device sync and streak rewards remain
+unavailable. The local Furqan browser storage is intentionally not read across
+origins and is not accepted as authenticated progress.
 
 Set these variables in the build environment before exporting web or building
 native apps. They are read by `app.config.js` and embedded into the app config;

@@ -19,6 +19,7 @@ module.exports = ({ config }) => {
     slug: config.slug ?? 'mishkah',
     scheme: 'mishkah',
     platforms: ['ios', 'android', 'web'],
+    plugins: [...(config.plugins ?? []), 'expo-audio', 'expo-asset', 'expo-web-browser', 'expo-sharing'],
     web: {
       bundler: 'metro',
       output: 'single',

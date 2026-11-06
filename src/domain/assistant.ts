@@ -1,7 +1,42 @@
+import { EVENING_ADHKAR, HISN_AL_MUSLIM_DUAS, MORNING_ADHKAR, searchDuas } from './adhkar';
+import { getDailyHadith, searchHadiths } from './hadith';
+import { TASBEEH_PRESETS } from './tasbeeh';
+
 type LocalAnswer = {
   title: string;
   answer: string;
 };
+
+export function getContextualAnswer(query: string): LocalAnswer {
+  const normalized = query.trim().toLocaleLowerCase();
+  if (/reciter|audio quran|quran audio/.test(normalized)) {
+    return {
+      title: 'Qur’an reciters',
+      answer: 'Browse eleven reciters in More → Worship → Reciters. Streaming needs an internet connection; the library unlocks at a verified 21-day Furqan reading streak.',
+    };
+  }
+  if (/hadith|prophet|sunnah/.test(normalized)) {
+    const hadith = searchHadiths(query)[0] ?? getDailyHadith();
+    return { title: hadith.title, answer: `${hadith.summary} Reference: ${hadith.reference}. This is a teaching summary, not a verbatim translation.` };
+  }
+  if (/dua|supplication|travel|anxiety|worry|sleep|home/.test(normalized)) {
+    const dua = searchDuas(query)[0];
+    if (dua) return { title: dua.title, answer: `${dua.arabic}\n${dua.transliteration}\n${dua.meaning} Reference: ${dua.reference}.` };
+    return { title: 'Dua library', answer: `There are ${HISN_AL_MUSLIM_DUAS.length} offline supplications. Search by context such as travel, anxiety, sleep, morning, or home.` };
+  }
+  if (/adhkar|remembrance|morning|evening/.test(normalized)) {
+    const entries = /evening/.test(normalized) ? EVENING_ADHKAR : MORNING_ADHKAR;
+    const entry = entries.find((item) => `${item.title} ${item.transliteration}`.toLocaleLowerCase().includes(normalized));
+    const selected = entry ?? entries[0];
+    return { title: selected.title, answer: `${selected.transliteration} ${selected.meaning} Repeat ${selected.count} time${selected.count === 1 ? '' : 's'}. Reference: ${selected.reference}.` };
+  }
+  if (/tasbeeh|tasbih|dhikr/.test(normalized)) {
+    const preset = TASBEEH_PRESETS.find((item) => `${item.label} ${item.transliteration}`.toLocaleLowerCase().includes(normalized));
+    const selected = preset ?? TASBEEH_PRESETS[0];
+    return { title: selected.label, answer: `${selected.arabic} ${selected.transliteration}: ${selected.meaning} Suggested target: ${selected.target}. Reference: ${selected.reference}.` };
+  }
+  return getLocalAnswer(query);
+}
 
 const FAQS: readonly LocalAnswer[] = [
   {

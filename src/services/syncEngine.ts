@@ -1,5 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import { computeUnlockedFeatures } from '../domain/streakRewards';
+
+export { computeUnlockedFeatures } from '../domain/streakRewards';
 
 export type SyncStatus = 'idle' | 'queued' | 'syncing' | 'synced';
 
@@ -26,6 +29,12 @@ export interface SyncState {
   linkedAccount: LinkedAccountState;
   streak: number;
   featuresUnlocked: string[];
+}
+
+export interface FurqanProgressSnapshot {
+  currentStreak: number;
+  highestStreak?: number;
+  lastActiveDate?: string | null;
 }
 
 const STORAGE_KEY = 'mishkah.sync.v1';
@@ -163,12 +172,53 @@ export async function flushSyncQueue(idToken: string): Promise<SyncState> {
   return readSyncState();
 }
 
-export function computeUnlockedFeatures(streak: number): string[] {
-  const unlocked: string[] = ['basic-guidance'];
-  if (streak >= 3) unlocked.push('audio-reminders');
-  if (streak >= 7) unlocked.push('advanced-guidance');
-  if (streak >= 14) unlocked.push('dark-theme-pro');
-  return unlocked;
+function parseFurqanProgress(value: unknown): FurqanProgressSnapshot | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const record = value as Record<string, unknown>;
+  const progress = (record.furqanProgress ?? record.progression ?? record) as Record<string, unknown>;
+  const currentStreak = progress.currentStreak;
+  if (typeof currentStreak !== 'number' || !Number.isInteger(currentStreak) || currentStreak < 0 || currentStreak > 10_000) {
+    return null;
+  }
+  return {
+    currentStreak,
+    highestStreak:
+      typeof progress.highestStreak === 'number' && Number.isInteger(progress.highestStreak)
+        ? Math.max(currentStreak, progress.highestStreak)
+        : currentStreak,
+    lastActiveDate: typeof progress.lastActiveDate === 'string' ? progress.lastActiveDate : null,
+  };
+}
+
+export async function refreshFurqanProgress(idToken: string): Promise<SyncState | null> {
+  if (!SYNC_API_URL || !idToken) return null;
+
+  const separator = SYNC_API_URL.includes('?') ? '&' : '?';
+  const response = await fetch(`${SYNC_API_URL}${separator}resource=furqan-progress`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${idToken}`, Accept: 'application/json' },
+  });
+  if (!response.ok) {
+    throw new Error(`Furqan progress could not be refreshed (HTTP ${response.status}).`);
+  }
+
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error('The sync service returned invalid Furqan progress data.');
+  }
+  const snapshot = parseFurqanProgress(payload);
+  if (!snapshot) throw new Error('The sync service returned an invalid streak value.');
+
+  const featuresUnlocked = computeUnlockedFeatures(snapshot.currentStreak);
+  const current = await readSyncState();
+  await writeSyncState({
+    streak: snapshot.currentStreak,
+    featuresUnlocked,
+    status: current.queuedCount > 0 ? 'queued' : current.status,
+  });
+  return readSyncState();
 }
 
 export async function syncEngagement(streak: number): Promise<SyncState> {
