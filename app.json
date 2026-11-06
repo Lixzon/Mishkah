@@ -22,7 +22,13 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "name": "Mishkah",
+      "shortName": "Mishkah",
+      "description": "The Seeker who carries the Light of Guidance across horizons.",
+      "themeColor": "#145B50",
+      "backgroundColor": "#F3F5F1",
+      "output": "single"
     },
     "plugins": [
       "expo-secure-store",

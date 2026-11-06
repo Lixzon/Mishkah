@@ -1,9 +1,9 @@
 # Mishkah
 
-Mishkah is a standalone, offline-first React Native application by LIXZON.
+Mishkah is a cross-platform, offline-first React Native application by LIXZON.
 Its tagline is “The Seeker who carries the Light of Guidance across horizons.”
-This phase is intentionally independent: no sibling-app bridge, donations, or
-bank-payment code is included.
+It remains independently deployable; optional cross-device data sync uses a
+shared HTTPS service rather than direct access to a sibling app's local data.
 
 ## Run and verify
 
@@ -17,6 +17,55 @@ npx expo start
 Use the Expo Go app or an iOS/Android development build to run the mobile app.
 Flutter is not required. The city catalogue, prayer engine, checklists, guide
 answers, and scheduled reminders work without a network connection.
+
+### Web
+
+Run the browser version locally with `npm run web`, or create and preview a
+production web export with:
+
+```powershell
+npm run web:build
+npm run web:serve
+```
+
+The public website is deployed from `main` to
+https://lixzon.github.io/Mishkah/ by the GitHub Pages workflow. The web version
+uses the same offline prayer calculations, guide, and saved preferences. Native
+scheduled notifications and encrypted device diagnostics remain available only
+in the iOS and Android apps.
+
+For Vercel, import the Mishkah repository and deploy from its repository root.
+The included `vercel.json` builds `dist` with `npm run web:build`; use the
+deployment URL Vercel provides to open the app. A GitHub repository URL or a
+source file URL displays project files, not the running app.
+
+After the website is deployed over HTTPS, install it from the browser: in
+Android Chrome, choose **Install app** from the browser menu; on iPhone, open
+the site in Safari and choose **Add to Home Screen** from Share. The PWA caches
+the app shell for offline launching after its first successful load. This
+installs the website as a home-screen app; it is not an APK or App Store binary.
+
+### Google account and cross-device sync
+
+Google sign-in requires OAuth client IDs configured for each platform:
+
+```powershell
+$env:EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID = '<Google web client ID>'
+$env:EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID = '<Google iOS client ID>'
+$env:EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID = '<Google Android client ID>'
+```
+
+Native ID tokens are stored with SecureStore. Browser sign-in is kept in memory;
+the app does not persist bearer tokens in browser storage. Queued updates stay
+local unless `EXPO_PUBLIC_SYNC_API_URL` points to a configured HTTPS service.
+That endpoint must verify the Google ID token, durably store accepted events,
+and return JSON shaped as `{ "acceptedIds": ["event-id"] }`. The client only
+removes events explicitly acknowledged by the service. Without that service,
+account linking can work but cross-device sync remains unavailable.
+
+Set these variables in the build environment before exporting web or building
+native apps. They are read by `app.config.js` and embedded into the app config;
+never put a Google client secret or server credential in these variables.
 
 ## Architecture
 

@@ -2,6 +2,8 @@ import { StatusBar } from 'expo-status-bar';
 import Constants from 'expo-constants';
 import * as Crypto from 'expo-crypto';
 import * as SplashScreen from 'expo-splash-screen';
+import * as WebBrowser from 'expo-web-browser';
+import { useIdTokenAuthRequest } from 'expo-auth-session/providers/google';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -52,6 +54,18 @@ import {
   type AppPreferences,
 } from './src/services/preferences';
 import { schedulePrayerReminders } from './src/services/notifications';
+import { GoogleSignInButton } from './src/components/GoogleSignInButton';
+import { clearAuthSession, isAuthSessionExpired, loadAuthSession, saveAuthSession } from './src/services/auth';
+import {
+  connectGoogleAccount,
+  disconnectGoogleAccount,
+  flushSyncQueue,
+  readSyncState,
+  syncEngagement,
+  type SyncState,
+} from './src/services/syncEngine';
+
+WebBrowser.maybeCompleteAuthSession();
 
 type Screen = 'Prayer' | 'Global' | 'Fasting' | 'Guide' | 'Settings';
 type Palette = {
@@ -115,6 +129,7 @@ const FASTING_CHECKLIST = [
 ] as const;
 
 const BRAND_TAGLINE = 'The Seeker who carries the Light of Guidance across horizons.';
+const UNCONFIGURED_GOOGLE_CLIENT_ID = 'unconfigured-google-client-id';
 const DEV_KEY_DIGEST: unknown = Constants.expoConfig?.extra?.developerKeyDigest;
 
 void SplashScreen.preventAutoHideAsync().catch((error: unknown) => {
@@ -178,6 +193,30 @@ export default function App() {
   const [developerMessage, setDeveloperMessage] = useState('');
   const [developerDigest, setDeveloperDigest] = useState('');
   const [isCheckingHealth, setIsCheckingHealth] = useState(false);
+  const [syncState, setSyncState] = useState<SyncState | null>(null);
+  const [authSession, setAuthSession] = useState<Awaited<ReturnType<typeof loadAuthSession>>>(null);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authMessage, setAuthMessage] = useState('');
+  const googleWebClientId = String(Constants.expoConfig?.extra?.googleWebClientId ?? '').trim();
+  const googleIosClientId = String(Constants.expoConfig?.extra?.googleIosClientId ?? '').trim();
+  const googleAndroidClientId = String(Constants.expoConfig?.extra?.googleAndroidClientId ?? '').trim();
+  const syncApiUrl = String(Constants.expoConfig?.extra?.syncApiUrl ?? '').trim();
+  const googleClientId = Platform.select({
+    ios: googleIosClientId,
+    android: googleAndroidClientId,
+    default: googleWebClientId,
+  }) ?? '';
+
+  const [request, response, promptAsync] = useIdTokenAuthRequest(
+    {
+      webClientId: googleWebClientId || UNCONFIGURED_GOOGLE_CLIENT_ID,
+      iosClientId: googleIosClientId || UNCONFIGURED_GOOGLE_CLIENT_ID,
+      androidClientId: googleAndroidClientId || UNCONFIGURED_GOOGLE_CLIENT_ID,
+      scopes: ['profile', 'email'],
+      selectAccount: true,
+    },
+    { scheme: 'mishkah' },
+  );
 
   const theme = preferences.theme;
   const palette = PALETTES[theme];
@@ -188,20 +227,30 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    loadPreferences()
-      .then(async (loadedPreferences) => {
+    Promise.all([
+      loadPreferences().then(async (loadedPreferences) => {
         await savePreferences(loadedPreferences);
         if (active) {
           preferencesRef.current = loadedPreferences;
           setPreferences(loadedPreferences);
-          setIsReady(true);
         }
-      })
+      }),
+      loadAuthSession().then((session) => {
+        if (active && session && !isAuthSessionExpired(session)) {
+          setAuthSession(session);
+        }
+      }),
+      readSyncState().then((next) => {
+        if (active) setSyncState(next);
+      }),
+    ])
       .catch((error: unknown) => {
         if (active) {
           setNotice(`Your saved settings could not be loaded: ${friendlyError(error, 'storage is unavailable')}`);
-          setIsReady(true);
         }
+      })
+      .finally(() => {
+        if (active) setIsReady(true);
       });
 
     const uninstallBatteryGovernor = installBatteryGovernor((active) => {
@@ -224,6 +273,39 @@ export default function App() {
     const interval = setInterval(() => setNow(new Date()), 30_000);
     return () => clearInterval(interval);
   }, [appState]);
+
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const idToken = response.params.id_token || response.authentication?.idToken;
+      if (!idToken) {
+        setAuthLoading(false);
+        setAuthMessage('Google sign-in completed without an ID token. Please try again.');
+        return;
+      }
+      const session = {
+        provider: 'google' as const,
+        idToken,
+        accessToken: response.authentication?.accessToken,
+        name: 'Google account',
+        linkedAt: Date.now(),
+        expiresAt: Date.now() + (response.authentication?.expiresIn ?? 3600) * 1000,
+      };
+      void saveAuthSession(session)
+        .then(() => connectGoogleAccount({ name: session.name }))
+        .then((next) => {
+          setAuthSession(session);
+          setSyncState(next);
+          setAuthMessage('Google account linked successfully.');
+        })
+        .catch((error: unknown) => setAuthMessage(`Google sign-in could not be saved: ${friendlyError(error, 'secure storage is unavailable')}`))
+        .finally(() => setAuthLoading(false));
+    }
+
+    if (response?.type === 'error') {
+      setAuthLoading(false);
+      setAuthMessage('Google sign-in could not be completed.');
+    }
+  }, [response]);
 
   useEffect(() => {
     if (
@@ -399,6 +481,53 @@ export default function App() {
       setDeveloperMessage(`${entries.length} encrypted exception${entries.length === 1 ? '' : 's'} in the local ring buffer.`);
     } catch (error) {
       setDeveloperMessage(`The local digest could not be read: ${friendlyError(error, 'secure storage is unavailable')}`);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    if (!request || !googleClientId) {
+      const requiredVariable = Platform.select({
+        ios: 'EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID',
+        android: 'EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID',
+        default: 'EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID',
+      });
+      setAuthMessage(`Configure ${requiredVariable} before enabling Google sign-in.`);
+      return;
+    }
+
+    setAuthLoading(true);
+    setAuthMessage('');
+    try {
+      const result = await promptAsync();
+      if (result.type === 'cancel' || result.type === 'dismiss') {
+        setAuthMessage('Google sign-in was cancelled.');
+      } else if (result.type === 'error') {
+        setAuthMessage('Google authentication could not be completed.');
+      }
+    } catch (error) {
+      setAuthMessage(`Google sign-in failed: ${friendlyError(error, 'please try again')}`);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleGoogleSignOut = async () => {
+    await clearAuthSession();
+    const next = await disconnectGoogleAccount();
+    setAuthSession(null);
+    setSyncState(next);
+    setAuthMessage('Google account disconnected.');
+  };
+
+  const handleSyncNow = async () => {
+    try {
+      const next = await flushSyncQueue(authSession?.idToken ?? '');
+      setSyncState(next);
+      setNotice(next.queuedCount ? `${next.queuedCount} updates are still waiting for sync.` : 'Your queued updates are synced.');
+    } catch (error) {
+      setNotice(friendlyError(error, 'Sync could not complete. Your updates remain queued on this device.'));
+      const latest = await readSyncState();
+      setSyncState(latest);
     }
   };
 
@@ -917,6 +1046,56 @@ export default function App() {
                 </Text>
               </View>
               <View style={styles.settingsCard}>
+                <Text style={styles.settingGroupTitle}>Account & sync</Text>
+                <Text style={styles.settingDescription}>
+                  {syncApiUrl
+                    ? 'Connect a Google account to sync streaks and unlock guidance features across devices.'
+                    : 'Google account linking is available. Cross-device sync is not configured for this build.'}
+                </Text>
+                <View style={styles.syncCard}>
+                  <Text style={styles.syncLabel}>Status</Text>
+                  <Text style={styles.syncValue}>
+                    {!authSession && syncState?.linkedAccount.linked
+                      ? 'Sign-in required'
+                      : authSession && syncApiUrl
+                        ? 'Google connected'
+                        : authSession
+                          ? 'Account linked'
+                          : 'Local-only mode'}
+                  </Text>
+                  <Text style={styles.syncMeta}>{syncState?.status ?? 'idle'} · {syncState?.queuedCount ?? 0} queued updates</Text>
+                  {authSession && !syncApiUrl ? (
+                    <Text style={styles.syncMeta}>Sync service is not configured for this build.</Text>
+                  ) : null}
+                  {authSession ? (
+                    <Text style={styles.syncMeta}>Signed in as {authSession.email ?? authSession.name ?? 'Google user'}</Text>
+                  ) : null}
+                </View>
+                {!authSession ? (
+                  <GoogleSignInButton
+                    label="Sign in with Google"
+                    loading={authLoading}
+                    onPress={() => void handleGoogleSignIn()}
+                  />
+                ) : (
+                  <View style={styles.inlineActions}>
+                    <ActionButton
+                      label="Sync now"
+                      onPress={() => void handleSyncNow()}
+                      palette={palette}
+                      styles={styles}
+                    />
+                    <ActionButton
+                      label="Sign out"
+                      onPress={() => void handleGoogleSignOut()}
+                      palette={palette}
+                      styles={styles}
+                    />
+                  </View>
+                )}
+                {authMessage ? <Text style={styles.healthMessage}>{authMessage}</Text> : null}
+              </View>
+              <View style={styles.settingsCard}>
                 <Text style={styles.settingGroupTitle}>A private health check</Text>
                 <Text style={styles.settingDescription}>
                   Check local app health without sharing technical logs.
@@ -1433,6 +1612,21 @@ function createStyles(colors: Palette) {
     settingsCard: { backgroundColor: colors.surface, borderRadius: 18, padding: 16, marginBottom: 12 },
     settingGroupTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
     settingDescription: { color: colors.muted, fontSize: 11, lineHeight: 17, marginTop: 5 },
+    syncCard: {
+      backgroundColor: colors.surfaceRaised,
+      borderRadius: 14,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      marginTop: 12,
+    },
+    syncLabel: { color: colors.muted, fontSize: 9, fontWeight: '700', letterSpacing: 1.2 },
+    syncValue: { color: colors.ink, fontSize: 16, fontWeight: '600', marginTop: 6 },
+    syncMeta: { color: colors.muted, fontSize: 10, marginTop: 4 },
+    inlineActions: {
+      flexDirection: 'row',
+      gap: 8,
+      marginTop: 12,
+    },
     choiceRow: { flexDirection: 'row', gap: 9, marginTop: 13 },
     choice: {
       flex: 1,

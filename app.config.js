@@ -15,6 +15,28 @@ module.exports = ({ config }) => {
 
   return {
     ...config,
-    extra,
+    name: config.name ?? 'Mishkah',
+    slug: config.slug ?? 'mishkah',
+    scheme: 'mishkah',
+    platforms: ['ios', 'android', 'web'],
+    web: {
+      bundler: 'metro',
+      output: 'single',
+      meta: {
+        'theme-color': '#145B50',
+        viewport: 'width=device-width, initial-scale=1, viewport-fit=cover',
+      },
+    },
+    experiments: {
+      ...config.experiments,
+      ...(process.env.GITHUB_PAGES === 'true' ? { baseUrl: '/Mishkah/' } : {}),
+    },
+    extra: {
+      ...extra,
+      googleWebClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? '',
+      googleIosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ?? '',
+      googleAndroidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ?? '',
+      syncApiUrl: process.env.EXPO_PUBLIC_SYNC_API_URL ?? '',
+    },
   };
 };
