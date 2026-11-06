@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   AppState,
+  Image,
   Linking,
   Modal,
   Platform,
@@ -603,7 +604,11 @@ export default function App() {
         <View />
         <View style={styles.splashCenter}>
           <View style={styles.splashMark}>
-            <Text style={styles.splashSpark}>✦</Text>
+            <Image
+              source={require('./assets/brand-mark.png')}
+              resizeMode="contain"
+              style={styles.splashBrandImage}
+            />
           </View>
           <Text style={styles.splashName}>Mishkah</Text>
           <Text style={styles.splashTagline}>{BRAND_TAGLINE}</Text>
@@ -629,7 +634,11 @@ export default function App() {
             style={styles.brandLockup}
           >
             <View style={styles.brandMark}>
-              <Text style={styles.brandSpark}>✦</Text>
+              <Image
+                source={require('./assets/brand-mark.png')}
+                resizeMode="contain"
+                style={styles.brandImage}
+              />
             </View>
             <View>
               <Text style={styles.brandName}>Mishkah</Text>
@@ -1671,7 +1680,7 @@ function createStyles(colors: Palette) {
       justifyContent: 'center',
       backgroundColor: colors.accent,
     },
-    splashSpark: { color: colors.accentInk, fontSize: 28 },
+    splashBrandImage: { width: 48, height: 48 },
     splashName: { color: colors.ink, fontSize: 28, fontWeight: '700', marginTop: 17 },
     splashTagline: {
       color: colors.muted,
@@ -1699,9 +1708,9 @@ function createStyles(colors: Palette) {
       borderRadius: 14,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: colors.accent,
+      backgroundColor: '#145B50',
     },
-    brandSpark: { color: colors.accentInk, fontSize: 20 },
+    brandImage: { width: 31, height: 31 },
     brandName: { color: colors.ink, fontSize: 19, fontWeight: '700', letterSpacing: 0.1 },
     brandCaption: { color: colors.muted, fontSize: 10, marginTop: 2 },
     headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },

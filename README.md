@@ -92,6 +92,8 @@ never put a Google client secret or server credential in these variables.
 
 ## Architecture
 
+- `assets/brand-mark.svg` is the source for Mishkah's header, splash, app icon,
+  favicon, and Android adaptive icon. `npm run icons` regenerates the PNG assets.
 - `src/domain/cities.ts` is a compact, tuple-based city/time-zone index. City
   objects and prayer calculations are hydrated only when needed. Five pins
   maximum are enforced by the same domain helper used by the interface.
