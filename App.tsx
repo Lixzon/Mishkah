@@ -36,6 +36,7 @@ import {
   getPrayerTimes,
   localMinuteAt,
   nextPrayerAt,
+  isValidJumuahTime,
   type PrayerName,
 } from './src/domain/prayer';
 import {
@@ -380,6 +381,10 @@ export default function App() {
     ? getPrayerTimes(city, now, preferences.calculationMethod)
     : undefined;
   const nextPrayer = city && prayerTimes ? nextPrayerAt(prayerTimes, now, city.timeZone) : undefined;
+  const jumuahTime = city ? preferences.jumuahTimesByCity[city.id] : undefined;
+  const isFridayInCity = city
+    ? new Intl.DateTimeFormat('en-US', { timeZone: city.timeZone, weekday: 'long' }).format(now) === 'Friday'
+    : false;
   const pinnedCities = preferences.pinnedCityIds
     .map((id) => getCity(id))
     .filter((pinnedCity): pinnedCity is City => pinnedCity !== undefined);
@@ -737,6 +742,29 @@ export default function App() {
                 })}
               </View>
 
+              {isFridayInCity ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Edit Jumu'ah time for ${city.name}`}
+                  onPress={() => setScreen('Global')}
+                  style={styles.fridayPrayerCard}
+                >
+                  <View style={styles.fridayPrayerCopy}>
+                    <Text style={styles.fridayPrayerEyebrow}>FRIDAY · JUMU'AH</Text>
+                    <Text style={styles.fridayPrayerTitle}>{city.name}</Text>
+                  </View>
+                  <Text style={styles.fridayPrayerTime}>
+                    {jumuahTime
+                      ? formatPrayerTime(
+                          Number(jumuahTime.slice(0, 2)) * 60 + Number(jumuahTime.slice(3, 5)),
+                          city,
+                          localDate,
+                        )
+                      : 'Set local time'}
+                  </Text>
+                </Pressable>
+              ) : null}
+
               <View style={styles.inlineCards}>
                 <Pressable style={styles.softCard} onPress={() => setScreen('Global')}>
                   <Text style={styles.softCardSymbol}>◎</Text>
@@ -822,28 +850,42 @@ export default function App() {
                 const cityTimes = getPrayerTimes(pinnedCity, now, preferences.calculationMethod);
                 return (
                   <View key={pinnedCity.id} style={styles.globalCityCard}>
-                    <Pressable
-                      accessibilityRole="button"
-                      onPress={() => openCity(pinnedCity)}
-                      style={styles.globalCityMain}
-                    >
-                      <Text style={styles.cityName}>{pinnedCity.name}</Text>
-                      <Text style={styles.cityCountry}>{pinnedCity.country} · {pinnedCity.timeZone}</Text>
-                      <View style={styles.cityPrayerPreview}>
-                        <Text style={styles.cityPrayerLabel}>FAJR</Text>
-                        <Text style={styles.cityPrayerValue}>{formatPrayerTime(cityTimes.Fajr, pinnedCity, cityDate)}</Text>
-                        <Text style={styles.cityPrayerLabel}>MAGHRIB</Text>
-                        <Text style={styles.cityPrayerValue}>{formatPrayerTime(cityTimes.Maghrib, pinnedCity, cityDate)}</Text>
-                      </View>
-                    </Pressable>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={`Unpin ${pinnedCity.name}`}
-                      onPress={() => removeCity(pinnedCity.id)}
-                      style={styles.removeCityButton}
-                    >
-                      <Text style={styles.removeCityText}>×</Text>
-                    </Pressable>
+                    <View style={styles.globalCityRow}>
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={() => openCity(pinnedCity)}
+                        style={styles.globalCityMain}
+                      >
+                        <Text style={styles.cityName}>{pinnedCity.name}</Text>
+                        <Text style={styles.cityCountry}>{pinnedCity.country} · {pinnedCity.timeZone}</Text>
+                        <View style={styles.cityPrayerPreview}>
+                          <Text style={styles.cityPrayerLabel}>FAJR</Text>
+                          <Text style={styles.cityPrayerValue}>{formatPrayerTime(cityTimes.Fajr, pinnedCity, cityDate)}</Text>
+                          <Text style={styles.cityPrayerLabel}>MAGHRIB</Text>
+                          <Text style={styles.cityPrayerValue}>{formatPrayerTime(cityTimes.Maghrib, pinnedCity, cityDate)}</Text>
+                        </View>
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Unpin ${pinnedCity.name}`}
+                        onPress={() => removeCity(pinnedCity.id)}
+                        style={styles.removeCityButton}
+                      >
+                        <Text style={styles.removeCityText}>×</Text>
+                      </Pressable>
+                    </View>
+                    <JumuahTimeField
+                      cityName={pinnedCity.name}
+                      value={preferences.jumuahTimesByCity[pinnedCity.id] ?? ''}
+                      styles={styles}
+                      onInvalid={() => setNotice('Enter a local time from 00:00 to 23:59.')}
+                      onSave={(value) => changePreferences((current) => {
+                        const jumuahTimesByCity = { ...current.jumuahTimesByCity };
+                        if (value) jumuahTimesByCity[pinnedCity.id] = value;
+                        else delete jumuahTimesByCity[pinnedCity.id];
+                        return { ...current, jumuahTimesByCity };
+                      })}
+                    />
                   </View>
                 );
               })}
@@ -960,7 +1002,7 @@ export default function App() {
           {screen === 'Guide' ? (
             <>
               <View style={styles.introBlock}>
-                <Text style={styles.eyebrow}>A LOCAL-FIRST COMPANION</Text>
+                <Text style={styles.eyebrow}>YOUR MISHKAH COMPANION</Text>
                 <Text style={styles.pageTitle}>A little guidance.</Text>
                 <Text style={styles.bodyText}>
                   Answers come from a small on-device library. Nothing you ask is sent to a server.
@@ -972,7 +1014,7 @@ export default function App() {
                     <Text style={styles.assistantMarkText}>✦</Text>
                   </View>
                   <View>
-                    <Text style={styles.assistantTitle}>Mishkah Guide</Text>
+                    <Text style={styles.assistantTitle}>Rafiq AI</Text>
                     <Text style={styles.localBadge}>ON-DEVICE · OFFLINE READY</Text>
                   </View>
                 </View>
@@ -1112,7 +1154,7 @@ export default function App() {
               {([
                 { title: 'Fasting routine', detail: 'Suhoor, iftar, and your checklist', icon: '☾', target: 'Fasting' },
                 { title: 'Prayer cities', detail: 'Browse and pin places around the world', icon: '◎', target: 'Global' },
-                { title: 'Mishkah Guide', detail: 'Local answers and spiritual reminders', icon: '✦', target: 'Guide' },
+                { title: 'Rafiq AI', detail: 'Local answers and spiritual reminders', icon: '✦', target: 'Guide' },
                 { title: 'Settings', detail: 'Appearance, prayer method, diagnostics', icon: '⚙', target: 'Settings' },
               ] as const).map((item) => (
                 <Pressable accessibilityRole="button" key={item.target} onPress={() => setScreen(item.target)} style={styles.moreListRow}>
@@ -1552,6 +1594,63 @@ function ActionButton({
   );
 }
 
+function JumuahTimeField({
+  cityName,
+  value,
+  styles,
+  onSave,
+  onInvalid,
+}: {
+  cityName: string;
+  value: string;
+  styles: ReturnType<typeof createStyles>;
+  onSave: (value: string) => void;
+  onInvalid: () => void;
+}) {
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => setDraft(value), [value]);
+
+  const commit = () => {
+    const time = draft.trim();
+    if (!time || isValidJumuahTime(time)) {
+      onSave(time);
+      return;
+    }
+    setDraft(value);
+    onInvalid();
+  };
+
+  return (
+    <View style={styles.jumuahEditor}>
+      <View style={styles.jumuahEditorRow}>
+        <Text style={styles.jumuahFieldLabel}>Jumu'ah · {cityName} local time</Text>
+        <TextInput
+          accessibilityLabel={`Jumu'ah time for ${cityName}, 24-hour format`}
+          keyboardType="numbers-and-punctuation"
+          maxLength={5}
+          onChangeText={setDraft}
+          onEndEditing={commit}
+          onSubmitEditing={commit}
+          placeholder="13:30"
+          placeholderTextColor="#82908A"
+          returnKeyType="done"
+          style={styles.jumuahTimeInput}
+          value={draft}
+        />
+        <Pressable
+          accessibilityRole="button"
+          onPress={commit}
+          style={styles.jumuahSaveButton}
+        >
+          <Text style={styles.jumuahSaveText}>Save</Text>
+        </Pressable>
+      </View>
+      <Text style={styles.jumuahHelp}>Enter your local mosque’s time in 24-hour format, then save. Leave blank to clear it.</Text>
+    </View>
+  );
+}
+
 function createStyles(colors: Palette) {
   return StyleSheet.create({
     safeArea: { flex: 1, backgroundColor: colors.background },
@@ -1763,6 +1862,8 @@ function createStyles(colors: Palette) {
       backgroundColor: colors.surface,
       padding: 15,
       marginBottom: 10,
+    },
+    globalCityRow: {
       flexDirection: 'row',
       alignItems: 'flex-start',
     },
@@ -1770,6 +1871,47 @@ function createStyles(colors: Palette) {
     cityPrayerPreview: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14 },
     cityPrayerLabel: { color: colors.muted, fontSize: 8, fontWeight: '700', letterSpacing: 0.8 },
     cityPrayerValue: { color: colors.accent, fontSize: 11, fontWeight: '600', marginRight: 6 },
+    jumuahEditor: { marginTop: 14, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line },
+    jumuahEditorRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    jumuahFieldLabel: { color: colors.ink, flex: 1, fontSize: 11, fontWeight: '600' },
+    jumuahTimeInput: {
+      minWidth: 68,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.line,
+      backgroundColor: colors.surfaceRaised,
+      color: colors.ink,
+      fontSize: 13,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      textAlign: 'center',
+    },
+    jumuahSaveButton: {
+      alignItems: 'center',
+      backgroundColor: colors.accent,
+      borderRadius: 10,
+      justifyContent: 'center',
+      minHeight: 36,
+      paddingHorizontal: 11,
+    },
+    jumuahSaveText: { color: colors.accentInk, fontSize: 10, fontWeight: '700' },
+    jumuahHelp: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 7 },
+    fridayPrayerCard: {
+      alignItems: 'center',
+      backgroundColor: colors.surfaceRaised,
+      borderColor: colors.gold,
+      borderRadius: 15,
+      borderWidth: StyleSheet.hairlineWidth,
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginTop: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+    },
+    fridayPrayerCopy: { flex: 1, minWidth: 0 },
+    fridayPrayerEyebrow: { color: colors.gold, fontSize: 9, fontWeight: '700' },
+    fridayPrayerTitle: { color: colors.ink, fontSize: 12, fontWeight: '600', marginTop: 3 },
+    fridayPrayerTime: { color: colors.accent, fontSize: 14, fontWeight: '700', marginLeft: 12 },
     removeCityButton: {
       width: 32,
       height: 32,

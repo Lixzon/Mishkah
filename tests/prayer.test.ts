@@ -5,6 +5,7 @@ import { getCity, pinCity, searchCities, unpinCity } from '../src/domain/cities'
 import {
   dateInTimeZone,
   getPrayerTimesForDate,
+  isValidJumuahTime,
   localMinuteAt,
   nextPrayerAt,
   prayerTimeInstant,
@@ -88,6 +89,17 @@ describe('offline prayer calculations', () => {
       'Europe/London',
     );
     assert.deepEqual(lateNight, { name: 'Fajr', minutesUntil: 420 });
+  });
+});
+
+describe('local Jumu\'ah time input', () => {
+  it('accepts 24-hour times and rejects incomplete or out-of-range values', () => {
+    assert.equal(isValidJumuahTime('00:00'), true);
+    assert.equal(isValidJumuahTime('13:30'), true);
+    assert.equal(isValidJumuahTime('23:59'), true);
+    assert.equal(isValidJumuahTime('1:30'), false);
+    assert.equal(isValidJumuahTime('24:00'), false);
+    assert.equal(isValidJumuahTime('13:60'), false);
   });
 });
 

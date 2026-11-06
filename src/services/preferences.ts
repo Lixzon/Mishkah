@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { DEFAULT_CITY_IDS, MAX_PINNED_CITIES } from '../domain/cities';
-import type { CalculationMethod } from '../domain/prayer';
+import { DEFAULT_CITY_IDS, MAX_PINNED_CITIES, getCity } from '../domain/cities';
+import { isValidJumuahTime, type CalculationMethod } from '../domain/prayer';
 import type { CustomDhikr } from '../domain/tasbeeh';
 
 const PREFERENCES_KEY = 'mishkah.preferences.v1';
@@ -8,6 +8,7 @@ const PREFERENCES_KEY = 'mishkah.preferences.v1';
 export type AppPreferences = {
   pinnedCityIds: string[];
   selectedCityId: string;
+  jumuahTimesByCity: Record<string, string>;
   theme: 'light' | 'dark' | 'midnight';
   calculationMethod: CalculationMethod;
   fajrAlarm: boolean;
@@ -25,6 +26,7 @@ export type AppPreferences = {
 export const DEFAULT_PREFERENCES: AppPreferences = {
   pinnedCityIds: [...DEFAULT_CITY_IDS],
   selectedCityId: DEFAULT_CITY_IDS[0],
+  jumuahTimesByCity: {},
   theme: 'light',
   calculationMethod: 'MWL',
   fajrAlarm: false,
@@ -49,6 +51,16 @@ function normalizeCounts(value: unknown): Record<string, number> {
     Object.entries(value)
       .filter((entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isFinite(entry[1]))
       .map(([id, count]) => [id, Math.max(0, Math.min(1000, Math.floor(count)))]),
+  );
+}
+
+function normalizeJumuahTimesByCity(value: unknown): Record<string, string> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, string] => Boolean(getCity(entry[0])) &&
+        typeof entry[1] === 'string' && isValidJumuahTime(entry[1]),
+    ),
   );
 }
 
@@ -92,6 +104,7 @@ function normalizePreferences(value: unknown): AppPreferences {
   return {
     pinnedCityIds,
     selectedCityId,
+    jumuahTimesByCity: normalizeJumuahTimesByCity(input.jumuahTimesByCity),
     theme: input.theme === 'midnight' ? 'midnight' : input.theme === 'dark' ? 'dark' : 'light',
     calculationMethod: isCalculationMethod(input.calculationMethod)
       ? input.calculationMethod

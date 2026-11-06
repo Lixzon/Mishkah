@@ -10,6 +10,10 @@ export const CALCULATION_METHODS: readonly CalculationMethod[] = [
   'Umm al-Qura',
 ];
 
+export function isValidJumuahTime(value: string): boolean {
+  return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
+
 const METHOD_ANGLES: Record<
   CalculationMethod,
   { fajr: number; isha: number; ishaIntervalMinutes?: number }

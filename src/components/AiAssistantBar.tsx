@@ -61,10 +61,10 @@ export function AiAssistantBar({ palette, onNavigate }: AiAssistantBarProps) {
       <View style={styles.inputRow}>
         <Text style={styles.spark}>✦</Text>
         <TextInput
-          accessibilityLabel="Ask Mishkah for guidance"
+          accessibilityLabel="Ask Rafiq AI for guidance"
           onChangeText={setQuery}
           onSubmitEditing={submit}
-          placeholder="Ask Mishkah for guidance"
+          placeholder="Ask Rafiq AI for guidance"
           placeholderTextColor={palette.muted}
           returnKeyType="search"
           style={styles.input}
@@ -74,7 +74,7 @@ export function AiAssistantBar({ palette, onNavigate }: AiAssistantBarProps) {
           <Text style={styles.sendText}>↗</Text>
         </Pressable>
       </View>
-      <Text style={styles.disclosure}>On-device answers · offline ready</Text>
+      <Text style={styles.disclosure}>Rafiq AI · On-device answers · offline ready</Text>
     </View>
   );
 }
