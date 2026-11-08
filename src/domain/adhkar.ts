@@ -14,11 +14,11 @@ export const MORNING_ADHKAR: readonly AdhkarEntry[] = [
   {
     id: 'morning-opening',
     title: 'Beginning the day with remembrance',
-    arabic: 'اللَّهُمَّ بِكَ أَصْبَحْنَا، وَبِكَ أَمْسَيْنَا، وَبِكَ نَحْيَا، وَبِكَ نَمُوتُ، وَإِلَيْكَ النُّشُورُ',
-    transliteration: 'Allahumma bika asbahna, wa bika amsayna, wa bika nahya, wa bika namut, wa ilayka-n-nushur.',
-    meaning: 'By You we enter the morning and evening, live and die, and to You is the resurrection.',
+    arabic: 'اللَّهُمَّ بِكَ أَصْبَحْنَا، وَبِكَ أَمْسَيْنَا، وَبِكَ نَحْيَا، وَبِكَ نَمُوتُ، وَإِلَيْكَ الْمَصِيرُ',
+    transliteration: 'Allahumma bika asbahna, wa bika amsayna, wa bika nahya, wa bika namutu, wa ilayka-l-masir.',
+    meaning: 'By You we enter the morning and evening, live and die, and to You is the return.',
     count: 1,
-    reference: 'Abu Dawud 5068; Jami‘ at-Tirmidhi 3391',
+    reference: 'Jami‘ at-Tirmidhi 3391',
   },
   {
     id: 'morning-afiyah',
@@ -27,7 +27,7 @@ export const MORNING_ADHKAR: readonly AdhkarEntry[] = [
     transliteration: 'Allahumma inni as’aluka al-‘afwa wa al-‘afiyata fi-d-dunya wa-l-akhirah.',
     meaning: 'O Allah, I ask You for pardon and well-being in this life and the next.',
     count: 1,
-    reference: 'Abu Dawud 5074; Sunan Ibn Majah 3871',
+    reference: 'Sunan Ibn Majah 3871',
   },
   {
     id: 'morning-ikhlas',
@@ -60,10 +60,10 @@ export const MORNING_ADHKAR: readonly AdhkarEntry[] = [
     id: 'morning-ayat-kursi',
     title: 'Ayat al-Kursi',
     arabic: 'اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ ۚ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ ۚ لَهُ مَا فِي السَّمَاوَاتِ وَمَا فِي الْأَرْضِ ۗ مَنْ ذَا الَّذِي يَشْفَعُ عِنْدَهُ إِلَّا بِإِذْنِهِ ۚ يَعْلَمُ مَا بَيْنَ أَيْدِيهِمْ وَمَا خَلْفَهُمْ ۖ وَلَا يُحِيطُونَ بِشَيْءٍ مِنْ عِلْمِهِ إِلَّا بِمَا شَاءَ ۚ وَسِعَ كُرْسِيُّهُ السَّمَاوَاتِ وَالْأَرْضَ ۖ وَلَا يَئُودُهُ حِفْظُهُمَا ۚ وَهُوَ الْعَلِيُّ الْعَظِيمُ',
-    transliteration: 'Allahu la ilaha illa huwa-l-hayyu-l-qayyum. La ta’khudhuhu sinatun wa la nawm. Lahu ma fi-s-samawati wa ma fi-l-ard... wa huwa-l-‘aliyyu-l-‘azim.',
+    transliteration: 'Allahu la ilaha illa huwa-l-hayyul-qayyum. La ta’khudhuhu sinatun wa la nawm. Lahu ma fis-samawati wa ma fil-ard. Man dhal-ladhi yashfa’u ‘indahu illa bi-idhnih. Ya’lamu ma bayna aydihim wa ma khalfahum. Wa la yuhituna bi-shay’in min ‘ilmihi illa bima sha’. Wasi’a kursiyyuhu-s-samawati wa-l-ard. Wa la ya’uduhu hifzuhuma wa huwa-l-‘aliyyul-‘azim.',
     meaning: 'Allah is the Ever-Living, Sustainer of all. His knowledge and authority encompass the heavens and earth, and preserving them does not tire Him.',
     count: 1,
-    reference: 'Qur’an 2:255; Abu Dawud 5074',
+    reference: 'Qur’an 2:255',
   },
   {
     id: 'morning-sayyid-istighfar',
@@ -109,9 +109,9 @@ export const EVENING_ADHKAR: readonly AdhkarEntry[] = MORNING_ADHKAR.map((entry)
       ...entry,
       id: 'evening-opening',
       title: 'Beginning the evening with remembrance',
-      arabic: 'اللَّهُمَّ بِكَ أَمْسَيْنَا، وَبِكَ أَصْبَحْنَا، وَبِكَ نَحْيَا، وَبِكَ نَمُوتُ، وَإِلَيْكَ الْمَصِيرُ',
-      transliteration: 'Allahumma bika amsayna, wa bika asbahna, wa bika nahya, wa bika namut, wa ilayka-l-masir.',
-      meaning: 'By You we enter the evening and morning, live and die, and to You is the return.',
+      arabic: 'اللَّهُمَّ بِكَ أَمْسَيْنَا، وَبِكَ أَصْبَحْنَا، وَبِكَ نَحْيَا، وَبِكَ نَمُوتُ، وَإِلَيْكَ النُّشُورُ',
+      transliteration: 'Allahumma bika amsayna, wa bika asbahna, wa bika nahya, wa bika namutu, wa ilayka-n-nushur.',
+      meaning: 'By You we enter the evening and morning, live and die, and to You is the resurrection.',
     };
   }
   if (entry.id === 'morning-sayyid-istighfar') {
@@ -184,14 +184,24 @@ export const HISN_AL_MUSLIM_DUAS: readonly DuaEntry[] = [
 ];
 
 export function searchDuas(query: string, category?: DuaEntry['category'] | 'all'): DuaEntry[] {
-  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const normalize = (value: string) => value
+    .normalize('NFKD')
+    .toLocaleLowerCase()
+    .replace(/[\u0640\u06D6-\u06ED]/g, '')
+    .replace(/\p{M}/gu, '')
+    .replace(/[أإآٱ]/g, 'ا')
+    .replace(/ؤ/g, 'و')
+    .replace(/[ئىي]/g, 'ي');
+  const normalizedQuery = normalize(query.trim());
   const searchTerms = normalizedQuery
     .split(/[^\p{L}\p{N}]+/u)
     .filter((term) => term.length > 2 && !['dua', 'duas', 'for', 'the', 'when', 'from', 'about'].includes(term));
   return HISN_AL_MUSLIM_DUAS.filter((dua) => {
     if (category && category !== 'all' && dua.category !== category) return false;
     if (!searchTerms.length) return !normalizedQuery || normalizedQuery === 'dua' || normalizedQuery === 'duas';
-    const searchable = `${dua.title} ${dua.category} ${dua.context} ${dua.meaning} ${dua.transliteration}`.toLocaleLowerCase();
+    const searchable = normalize(
+      `${dua.title} ${dua.category} ${dua.context} ${dua.meaning} ${dua.transliteration} ${dua.arabic}`,
+    );
     return searchTerms.every((term) => searchable.includes(term));
   });
 }

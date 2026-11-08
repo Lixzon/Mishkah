@@ -50,13 +50,35 @@ describe('offline worship library', () => {
   it('provides complete matching morning and evening routine entries', () => {
     assert.ok(MORNING_ADHKAR.length >= 8);
     assert.equal(EVENING_ADHKAR.length, MORNING_ADHKAR.length);
-    assert.ok(MORNING_ADHKAR.every((entry) => entry.arabic && entry.transliteration && entry.meaning && entry.count > 0));
+    for (const entries of [MORNING_ADHKAR, EVENING_ADHKAR]) {
+      assert.equal(new Set(entries.map((entry) => entry.id)).size, entries.length);
+      assert.ok(entries.every((entry) =>
+        entry.arabic && entry.transliteration && entry.meaning && entry.reference && entry.count > 0,
+      ));
+      assert.ok(entries.every((entry) => !entry.transliteration.includes('…') && !entry.transliteration.includes('...')));
+    }
+
+    const morningOpening = MORNING_ADHKAR.find((entry) => entry.id === 'morning-opening');
+    const eveningOpening = EVENING_ADHKAR.find((entry) => entry.id === 'evening-opening');
+    assert.ok(morningOpening?.arabic.endsWith('الْمَصِيرُ'));
+    assert.ok(eveningOpening?.arabic.endsWith('النُّشُورُ'));
+    assert.equal(morningOpening?.reference, 'Jami‘ at-Tirmidhi 3391');
+    assert.equal(MORNING_ADHKAR.find((entry) => entry.id === 'morning-afiyah')?.reference, 'Sunan Ibn Majah 3871');
+    assert.equal(MORNING_ADHKAR.find((entry) => entry.id === 'morning-ayat-kursi')?.reference, 'Qur’an 2:255');
+    assert.match(
+      MORNING_ADHKAR.find((entry) => entry.id === 'morning-ayat-kursi')?.transliteration ?? '',
+      /wa huwa-l-‘aliyyul-‘azim\.$/,
+    );
   });
 
   it('finds supplications by context and category', () => {
     assert.equal(searchDuas('journey')[0]?.id, 'dua-travel');
     assert.equal(searchDuas('', 'sleep').length, 2);
     assert.ok(HISN_AL_MUSLIM_DUAS.every((dua) => dua.reference && dua.context));
+    assert.equal(new Set(HISN_AL_MUSLIM_DUAS.map((dua) => dua.id)).size, HISN_AL_MUSLIM_DUAS.length);
+    assert.ok(HISN_AL_MUSLIM_DUAS.every((dua) => dua.arabic && dua.transliteration && dua.meaning && dua.count > 0));
+    assert.equal(searchDuas('سُبْحَانَ الَّذِي')[0]?.id, 'dua-travel');
+    assert.equal(searchDuas('سبحان الذي')[0]?.id, 'dua-travel');
   });
 
   it('uses the requested tasbeeh targets and clamps progress', () => {
