@@ -80,7 +80,6 @@ import {
   getSupabaseClient,
   isSupabaseSyncConfigured,
   startSupabaseGoogleSignIn,
-  subscribeToSharedRecords,
 } from './src/services/cloudSync';
 import {
   connectGoogleAccount,
@@ -88,7 +87,6 @@ import {
   flushSyncQueue,
   isCrossDeviceSyncConfigured,
   readSyncState,
-  refreshFurqanProgress,
   syncEngagement,
   type SyncState,
 } from './src/services/syncEngine';
@@ -262,7 +260,6 @@ export default function App() {
   const [profileModalVisible, setProfileModalVisible] = useState(false);
   const [streakModalVisible, setStreakModalVisible] = useState(false);
   const [prayerModalVisible, setPrayerModalVisible] = useState(false);
-  const [siblingSyncVisible, setSiblingSyncVisible] = useState(false);
   const [universalSearchVisible, setUniversalSearchVisible] = useState(false);
   const [universalSearchQuery, setUniversalSearchQuery] = useState('');
   const [universalSearchStatus, setUniversalSearchStatus] = useState('');
@@ -284,7 +281,6 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(false);
   const [authMessage, setAuthMessage] = useState('');
   const connectedSupabaseUserId = useRef<string | null>(null);
-  const resumeSiblingSyncChoice = useRef(false);
   const [dailyVerse, setDailyVerse] = useState<DailyVerse | null>(null);
   const [dailyVerseError, setDailyVerseError] = useState('');
   const [refreshingVerse, setRefreshingVerse] = useState(false);
@@ -407,92 +403,12 @@ export default function App() {
   }, [supabaseConfigured]);
 
   useEffect(() => {
-    let active = true;
-    const checkSyncLink = (url: string) => {
-      try {
-        if (new URL(url).searchParams.get('sync') === '1' && active) {
-          setSiblingSyncVisible(true);
-        }
-      } catch {
-        setAuthMessage('The sibling-app link is invalid.');
-      }
-    };
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      checkSyncLink(window.location.href);
-    } else {
-      void Linking.getInitialURL().then((url) => {
-        if (url) checkSyncLink(url);
-      }).catch((error: unknown) => {
-        if (active) setAuthMessage(`The sibling-app link could not be opened: ${friendlyError(error, 'please try again')}`);
-      });
-    }
-    const subscription = Linking.addEventListener('url', ({ url }) => checkSyncLink(url));
-    return () => {
-      active = false;
-      subscription.remove();
-    };
-  }, []);
-
-  useEffect(() => {
     if (appState !== 'active') {
       return;
     }
     const interval = setInterval(() => setNow(new Date()), 30_000);
     return () => clearInterval(interval);
   }, [appState]);
-
-  useEffect(() => {
-    if (appState !== 'active' || !authSession || !syncConfigured) return;
-    let active = true;
-    void refreshFurqanProgress(authSession.idToken)
-      .then((next) => {
-        if (active && next) setSyncState(next);
-      })
-      .catch((error: unknown) => {
-        if (active) setAuthMessage(`Furqan progress could not refresh: ${friendlyError(error, 'sync service unavailable')}`);
-      });
-    return () => {
-      active = false;
-    };
-  }, [appState, authSession?.idToken, syncConfigured]);
-
-  useEffect(() => {
-    if (!authSession || !isSupabaseSyncConfigured()) return;
-    let active = true;
-    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
-    let unsubscribe: (() => Promise<void>) | undefined;
-    void subscribeToSharedRecords((record) => {
-      if (
-        active &&
-        (record.record_key === 'furqan.progression' ||
-          record.record_key.startsWith('furqan.memorized:') ||
-          record.record_key.startsWith('quran.daily-highlight:'))
-      ) {
-        if (refreshTimer) clearTimeout(refreshTimer);
-        refreshTimer = setTimeout(() => {
-          void refreshFurqanProgress(authSession.idToken)
-            .then((next) => {
-              if (active && next) setSyncState(next);
-            })
-            .catch((error: unknown) => {
-              if (active) setAuthMessage(`Shared Furqan progress could not refresh: ${friendlyError(error, 'sync service unavailable')}`);
-            });
-        }, 300);
-      }
-    })
-      .then((cleanup) => {
-        if (active) unsubscribe = cleanup;
-        else void cleanup();
-      })
-      .catch((error: unknown) => {
-        if (active) setAuthMessage(`Live sync could not start: ${friendlyError(error, 'please try syncing again')}`);
-      });
-    return () => {
-      active = false;
-      if (refreshTimer) clearTimeout(refreshTimer);
-      if (unsubscribe) void unsubscribe();
-    };
-  }, [authSession?.idToken]);
 
   useEffect(() => {
     if (response?.type === 'success') {
@@ -516,22 +432,17 @@ export default function App() {
           const next = await connectGoogleAccount({ name: session.name });
           setAuthSession(session);
           setSyncState(next);
-          if (resumeSiblingSyncChoice.current) {
-            resumeSiblingSyncChoice.current = false;
-            setProfileModalVisible(false);
-            setSiblingSyncVisible(true);
-          }
           if (isSupabaseSyncConfigured()) {
             try {
               await connectSupabaseGoogleAccount(session.idToken, session.accessToken);
-              setAuthMessage('Google account connected to LIXZON shared sync.');
+              setAuthMessage('Google account connected to Mishkah sync.');
             } catch (error) {
               setAuthMessage(`Google sign-in is active locally, but Supabase sync could not connect: ${friendlyError(error, 'check the Supabase Google provider setup')}`);
             }
           } else {
             setAuthMessage(syncApiUrl
               ? 'Google sign-in is active on this device.'
-              : 'Google sign-in is active locally. Configure Supabase to enable cross-app sync.');
+              : 'Google sign-in is active locally. Configure a sync service to sync your data.');
           }
         } catch (error) {
           setAuthMessage(`Google sign-in could not be saved: ${friendlyError(error, 'secure storage is unavailable')}`);
@@ -812,9 +723,7 @@ export default function App() {
       setAuthLoading(true);
       setAuthMessage('');
       try {
-        const returnUrl = new URL(window.location.href);
-        if (resumeSiblingSyncChoice.current) returnUrl.searchParams.set('sync', '1');
-        await startSupabaseGoogleSignIn(returnUrl.toString());
+        await startSupabaseGoogleSignIn();
       } catch (error) {
         setAuthMessage(`Google sign-in failed: ${friendlyError(error, 'check the Supabase Google provider and redirect URL settings')}`);
       } finally {
@@ -838,14 +747,11 @@ export default function App() {
     try {
       const result = await promptAsync();
       if (result.type === 'cancel' || result.type === 'dismiss') {
-        resumeSiblingSyncChoice.current = false;
         setAuthMessage('Google sign-in was cancelled.');
       } else if (result.type === 'error') {
-        resumeSiblingSyncChoice.current = false;
         setAuthMessage('Google authentication could not be completed.');
       }
     } catch (error) {
-      resumeSiblingSyncChoice.current = false;
       setAuthMessage(`Google sign-in failed: ${friendlyError(error, 'please try again')}`);
     } finally {
       setAuthLoading(false);
@@ -869,8 +775,7 @@ export default function App() {
   const handleSyncNow = async () => {
     try {
       const next = await flushSyncQueue(authSession?.idToken ?? '');
-      const progress = await refreshFurqanProgress(authSession?.idToken ?? '');
-      setSyncState(progress ?? next);
+      setSyncState(next);
       setNotice(next.queuedCount ? `${next.queuedCount} updates are still waiting for sync.` : 'Your queued updates are synced.');
     } catch (error) {
       setNotice(friendlyError(error, 'Sync could not complete. Your updates remain queued on this device.'));
@@ -887,18 +792,8 @@ export default function App() {
     }
   };
 
-  const openFurqan = async (withSync: boolean) => {
-    setSiblingSyncVisible(false);
-    if (withSync && (!supabaseConfigured || !authSession)) {
-      setAuthMessage(!supabaseConfigured
-        ? 'To sync Furqan and Mishkah, configure the same Supabase project in both apps and enable its Google provider.'
-        : 'Sign in with the same Google account in both apps. You can confirm the sync after signing in.');
-      resumeSiblingSyncChoice.current = Boolean(supabaseConfigured);
-      setProfileModalVisible(true);
-      return;
-    }
-    if (withSync) await handleSyncNow();
-    await openSupportLink(`${furqanBaseUrl}/${withSync ? '?sync=1' : ''}`);
+  const openFurqan = async () => {
+    await openSupportLink(furqanBaseUrl);
   };
 
   const toggleChecklistItem = (itemId: string) => {
@@ -1065,7 +960,7 @@ export default function App() {
               <View style={styles.headerActions}>
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={`Furqan streak, ${syncState?.streak ?? 0} days`}
+                  accessibilityLabel={`Mishkah streak, ${syncState?.streak ?? 0} days`}
                   onPress={() => setStreakModalVisible(true)}
                   style={styles.headerActionButton}
                 >
@@ -1781,8 +1676,8 @@ export default function App() {
               </Pressable>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Explore Furqan, the companion Quran app"
-                onPress={() => setSiblingSyncVisible(true)}
+                accessibilityLabel="Open Furqan, the companion Quran app"
+                onPress={() => void openFurqan()}
                 style={styles.moreAccountRow}
               >
                 <View style={styles.moreIcon}><Text style={styles.moreIconText}>۞</Text></View>
@@ -1795,9 +1690,9 @@ export default function App() {
               <View style={styles.streakPanel}>
                 <View style={styles.streakHeading}>
                   <View>
-                    <Text style={styles.moreRowTitle}>Furqan reading streak</Text>
+                    <Text style={styles.moreRowTitle}>Mishkah reading streak</Text>
                     <Text style={styles.moreRowDescription}>
-                      {syncApiUrl ? 'Verified progress refreshes when your account connects.' : 'Connect a shared sync service to import verified Furqan progress.'}
+                      Your daily practice streak and rewards.
                     </Text>
                   </View>
                   <Text style={styles.streakCount}>{syncState?.streak ?? 0}<Text style={styles.streakUnit}> days</Text></Text>
@@ -1898,7 +1793,7 @@ export default function App() {
                     );
                   })}
                 </View>
-                <Text style={styles.helperText}>Midnight unlocks after a verified 14-day Furqan reading streak.</Text>
+                <Text style={styles.helperText}>Midnight unlocks after a 14-day Mishkah reading streak.</Text>
               </View>
               <View style={styles.settingsCard}>
                 <Text style={styles.settingGroupTitle}>Prayer calculations</Text>
@@ -1969,14 +1864,6 @@ export default function App() {
                           : 'Local-only mode'}
                   </Text>
                   <Text style={styles.syncMeta}>{syncState?.status ?? 'idle'} · {syncState?.queuedCount ?? 0} queued updates</Text>
-                  {syncConfigured ? (
-                    <Text style={styles.syncMeta}>
-                      Furqan: {syncState?.furqanMemorizedCount ?? 0} tracked ayahs · {syncState?.furqanMemorizedMilestones ?? 0} memorized
-                      {syncState?.dailyHighlightGlobalAyah
-                        ? ` · Today’s highlight ${syncState.dailyHighlightGlobalAyah}`
-                        : ''}
-                    </Text>
-                  ) : null}
                   {authSession && !syncConfigured ? (
                     <Text style={styles.syncMeta}>Cross-device sync is unavailable in this build. Your data stays on this device.</Text>
                   ) : null}
@@ -2210,59 +2097,6 @@ export default function App() {
       </Modal>
 
       <Modal
-        animationType="fade"
-        onRequestClose={() => setSiblingSyncVisible(false)}
-        transparent
-        visible={siblingSyncVisible}
-      >
-        <View style={styles.profileBackdrop}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Close sibling app prompt"
-            onPress={() => setSiblingSyncVisible(false)}
-            style={StyleSheet.absoluteFill}
-          />
-          <View style={styles.detailDrawer}>
-            <View style={styles.profileDrawerHandle} />
-            <View style={styles.profileDrawerHeading}>
-              <Text style={styles.settingGroupTitle}>Connect Furqan and Mishkah</Text>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Close sibling app prompt"
-                onPress={() => setSiblingSyncVisible(false)}
-                style={styles.profileCloseButton}
-              >
-                <Text style={styles.profileCloseText}>×</Text>
-              </Pressable>
-            </View>
-            <Text style={styles.settingDescription}>
-              Do you want to sync both apps? Sign in with the same Google account in Furqan and Mishkah. Your progress stays available offline and syncs when both apps are online.
-            </Text>
-            {!supabaseConfigured ? (
-              <Text style={styles.searchHelper}>
-                Shared sync is not configured in this build. You can still open Furqan; sync requires the same Supabase project in both apps.
-              </Text>
-            ) : null}
-            <View style={styles.siblingActions}>
-              <ActionButton
-                label="Yes, sync both apps"
-                onPress={() => void openFurqan(true)}
-                palette={palette}
-                styles={styles}
-                disabled={!supabaseConfigured}
-              />
-              <ActionButton
-                label="Open Furqan without syncing"
-                onPress={() => void openFurqan(false)}
-                palette={palette}
-                styles={styles}
-              />
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
         animationType="slide"
         onRequestClose={() => setStreakModalVisible(false)}
         transparent
@@ -2271,7 +2105,7 @@ export default function App() {
         <View style={styles.profileBackdrop}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Close Furqan streak details"
+            accessibilityLabel="Close Mishkah streak details"
             onPress={() => setStreakModalVisible(false)}
             style={StyleSheet.absoluteFill}
           />
@@ -2279,8 +2113,8 @@ export default function App() {
             <View style={styles.profileDrawerHandle} />
             <View style={styles.profileDrawerHeading}>
               <View>
-                <Text style={styles.settingGroupTitle}>Furqan reading streak</Text>
-                <Text style={styles.settingDescription}>Your Quran sibling-app progress, reflected here.</Text>
+                <Text style={styles.settingGroupTitle}>Mishkah reading streak</Text>
+                <Text style={styles.settingDescription}>Your progress from daily practice in Mishkah.</Text>
               </View>
               <Pressable
                 accessibilityRole="button"
@@ -2296,10 +2130,8 @@ export default function App() {
               <Text style={styles.streakHeroLabel}>day streak</Text>
               <Text style={styles.settingDescription}>
                 {syncState?.streak
-                  ? 'Latest available progress from Furqan.'
-                  : authSession
-                    ? 'No Furqan streak has synced yet.'
-                    : 'Connect the same account used in Furqan to see your streak.'}
+                  ? 'Keep returning to your daily practice to build your streak.'
+                  : 'Start a daily practice in Mishkah to begin your streak.'}
               </Text>
             </View>
             <View style={styles.streakPanel}>
@@ -2319,7 +2151,7 @@ export default function App() {
               })}
             </View>
             <ActionButton
-              label={authSession ? 'Open account & sync' : 'Connect Furqan account'}
+              label={authSession ? 'Open account & sync' : 'Open account'}
               onPress={() => {
                 setStreakModalVisible(false);
                 setScreen('More');
@@ -2328,9 +2160,6 @@ export default function App() {
               palette={palette}
               styles={styles}
             />
-            {!syncConfigured ? (
-              <Text style={styles.searchHelper}>Cross-device streak sync needs the shared sync service configured.</Text>
-            ) : null}
           </View>
         </View>
       </Modal>

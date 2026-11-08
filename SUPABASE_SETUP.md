@@ -1,9 +1,9 @@
-# Mishkah shared progress setup
+# Mishkah account sync setup
 
-Mishkah shares account-scoped progress with Furqan through Supabase. Use the same Supabase project and Google identity in both apps. The canonical schema, row-level security policies, Realtime publication, and Furqan setup steps are documented in the [Furqan Supabase setup guide](https://github.com/Lixzon/furqan-quran-app/blob/main/SUPABASE_SETUP.md).
+Mishkah uses Supabase for its own account-scoped sync. It does not import progress from or sync an account with Furqan.
 
-Set `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` in the build environment. These are client configuration values; a Supabase service-role key must never be embedded in the app. Apply the shared migration from the Furqan repository before enabling sync. Configure the Supabase Google provider to accept Mishkah's native Google client IDs and the same Google account users link in Furqan.
+Set `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` in the build environment. These are client configuration values; a Supabase service-role key must never be embedded in the app. Apply the schema migration in the Furqan repository if you are using that schema. Configure the Supabase Google provider for Mishkah's native client IDs and the app's redirect URLs.
 
-Without those external settings, Mishkah keeps using its existing local-first queue and does not claim that cross-device sync is active. The app uses Supabase Auth user sessions, SecureStore on native, and user-scoped RLS for shared records.
+Without those external settings, Mishkah keeps using its local-first queue and does not claim that cloud sync is active. Supabase Auth sessions use SecureStore on native and user-scoped row-level security.
 
-The shared record keys are `furqan.progression`, `furqan.memorized:<surah>:<ayah>`, `mishkah.engagement`, and `quran.daily-highlight:<date>`. Furqan and Mishkah must use the same project and Google identity for real-time progress sync.
+Mishkah stores its own engagement snapshot as `mishkah.engagement`. Furqan progress and Quran records are not read by Mishkah.

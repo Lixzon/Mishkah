@@ -36,7 +36,7 @@ export function getContextualAnswer(query: string): LocalAnswer {
   if (/reciter|audio quran|quran audio/.test(normalized)) {
     return {
       title: 'Qur’an reciters',
-      answer: 'Browse eleven reciters in More → Worship → Reciters. Streaming needs an internet connection; the library unlocks at a verified 21-day Furqan reading streak.',
+      answer: 'Browse eleven reciters in More → Worship → Reciters. Streaming needs an internet connection; the library unlocks at a 21-day Mishkah practice streak.',
     };
   }
   if (/hadith|prophet|sunnah/.test(normalized)) {

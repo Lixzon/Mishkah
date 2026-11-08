@@ -3,7 +3,6 @@ import Constants from 'expo-constants';
 import { computeUnlockedFeatures } from '../domain/streakRewards';
 import {
   isSupabaseSyncConfigured,
-  readSharedRecords,
   upsertSharedRecord,
 } from './cloudSync';
 
@@ -34,16 +33,6 @@ export interface SyncState {
   linkedAccount: LinkedAccountState;
   streak: number;
   featuresUnlocked: string[];
-  furqanMemorizedCount: number;
-  furqanMemorizedMilestones: number;
-  dailyHighlightDate: string | null;
-  dailyHighlightGlobalAyah: number | null;
-}
-
-export interface FurqanProgressSnapshot {
-  currentStreak: number;
-  highestStreak?: number;
-  lastActiveDate?: string | null;
 }
 
 const STORAGE_KEY = 'mishkah.sync.v1';
@@ -75,12 +64,6 @@ export async function readSyncState(): Promise<SyncState> {
     },
     streak: Number(parsed.streak ?? 0),
     featuresUnlocked: Array.isArray(parsed.featuresUnlocked) ? parsed.featuresUnlocked : [],
-    furqanMemorizedCount: Number(parsed.furqanMemorizedCount ?? 0),
-    furqanMemorizedMilestones: Number(parsed.furqanMemorizedMilestones ?? 0),
-    dailyHighlightDate: typeof parsed.dailyHighlightDate === 'string' ? parsed.dailyHighlightDate : null,
-    dailyHighlightGlobalAyah: Number.isInteger(parsed.dailyHighlightGlobalAyah)
-      ? parsed.dailyHighlightGlobalAyah
-      : null,
   };
 }
 
@@ -237,117 +220,6 @@ export async function flushSyncQueue(idToken: string): Promise<SyncState> {
       : current.linkedAccount,
   });
 
-  return readSyncState();
-}
-
-function parseFurqanProgress(value: unknown): FurqanProgressSnapshot | null {
-  if (typeof value !== 'object' || value === null) return null;
-  const record = value as Record<string, unknown>;
-  const progress = (record.furqanProgress ?? record.progression ?? record) as Record<string, unknown>;
-  const currentStreak = progress.currentStreak;
-  if (typeof currentStreak !== 'number' || !Number.isInteger(currentStreak) || currentStreak < 0 || currentStreak > 10_000) {
-    return null;
-  }
-  return {
-    currentStreak,
-    highestStreak:
-      typeof progress.highestStreak === 'number' && Number.isInteger(progress.highestStreak)
-        ? Math.max(currentStreak, progress.highestStreak)
-        : currentStreak,
-    lastActiveDate: typeof progress.lastActiveDate === 'string' ? progress.lastActiveDate : null,
-  };
-}
-
-export async function refreshFurqanProgress(idToken: string): Promise<SyncState | null> {
-  if (isSupabaseSyncConfigured()) {
-    const records = await readSharedRecords();
-    const record = records.find((item) => item.record_key === 'furqan.progression');
-    const snapshot = record ? parseFurqanProgress(record.payload) : null;
-    if (record && !snapshot) throw new Error('Supabase returned an invalid Furqan streak value.');
-    const memorizedRecords = records.filter((item) => /^furqan\.memorized:\d{1,3}:\d{1,3}$/.test(item.record_key));
-    for (const item of memorizedRecords) {
-      const [, surahKey, ayahKey] = item.record_key.split(':');
-      const surah = Number(surahKey);
-      const ayah = Number(ayahKey);
-      const payload = item.payload;
-      if (
-        surah < 1 || surah > 114 ||
-        ayah < 1 || ayah > 286 ||
-        payload.surah !== surah ||
-        payload.ayah !== ayah ||
-        typeof payload.memorized !== 'boolean' ||
-        typeof payload.playCount !== 'number' ||
-        !Number.isInteger(payload.playCount) ||
-        payload.playCount < 0
-      ) {
-        throw new Error(`Supabase returned an invalid Furqan memorization record (${item.record_key}).`);
-      }
-    }
-    const today = new Date();
-    const todayKey = [
-      today.getFullYear(),
-      String(today.getMonth() + 1).padStart(2, '0'),
-      String(today.getDate()).padStart(2, '0'),
-    ].join('-');
-    const highlight = records.find((item) => item.record_key === `quran.daily-highlight:${todayKey}`);
-    const highlightGlobalAyah = highlight?.payload.globalAyah;
-    const dailyHighlightGlobalAyah =
-      typeof highlightGlobalAyah === 'number' &&
-      Number.isInteger(highlightGlobalAyah) &&
-      highlightGlobalAyah >= 1 &&
-      highlightGlobalAyah <= 6236
-        ? highlightGlobalAyah
-        : null;
-    if (
-      highlight &&
-      dailyHighlightGlobalAyah === null
-    ) {
-      throw new Error('Supabase returned an invalid daily Quran highlight.');
-    }
-    const current = await readSyncState();
-    await writeSyncState({
-      ...(snapshot
-        ? {
-            streak: snapshot.currentStreak,
-            featuresUnlocked: computeUnlockedFeatures(snapshot.currentStreak),
-          }
-        : {}),
-      furqanMemorizedCount: memorizedRecords.length,
-      furqanMemorizedMilestones: memorizedRecords.filter((item) => item.payload.memorized === true).length,
-      dailyHighlightDate: highlight ? todayKey : null,
-      dailyHighlightGlobalAyah,
-      status: current.queuedCount > 0 ? 'queued' : current.status,
-    });
-    return readSyncState();
-  }
-
-  if (!SYNC_API_URL || !idToken) return null;
-
-  const separator = SYNC_API_URL.includes('?') ? '&' : '?';
-  const response = await fetch(`${SYNC_API_URL}${separator}resource=furqan-progress`, {
-    method: 'GET',
-    headers: { Authorization: `Bearer ${idToken}`, Accept: 'application/json' },
-  });
-  if (!response.ok) {
-    throw new Error(`Furqan progress could not be refreshed (HTTP ${response.status}).`);
-  }
-
-  let payload: unknown;
-  try {
-    payload = await response.json();
-  } catch {
-    throw new Error('The sync service returned invalid Furqan progress data.');
-  }
-  const snapshot = parseFurqanProgress(payload);
-  if (!snapshot) throw new Error('The sync service returned an invalid streak value.');
-
-  const featuresUnlocked = computeUnlockedFeatures(snapshot.currentStreak);
-  const current = await readSyncState();
-  await writeSyncState({
-    streak: snapshot.currentStreak,
-    featuresUnlocked,
-    status: current.queuedCount > 0 ? 'queued' : current.status,
-  });
   return readSyncState();
 }
 

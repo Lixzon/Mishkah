@@ -3,15 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
-import { createClient, type RealtimeChannel, type SupabaseClient } from '@supabase/supabase-js';
-
-export interface SharedSyncRecord {
-  record_key: string;
-  payload: Record<string, unknown>;
-  updated_at: string;
-}
-
-type SharedSyncRow = SharedSyncRecord & { user_id: string };
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 const extra = Constants.expoConfig?.extra ?? {};
 const SUPABASE_URL = String(extra.supabaseUrl ?? '').trim();
@@ -31,7 +23,6 @@ const secureStorage = {
 };
 
 let client: SupabaseClient | null = null;
-let channel: RealtimeChannel | null = null;
 
 export function isSupabaseSyncConfigured(): boolean {
   return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
@@ -106,74 +97,4 @@ export async function upsertSharedRecord(
     updated_at: new Date().toISOString(),
   }, { onConflict: 'user_id,record_key' });
   if (error) throw new Error(`Could not sync ${recordKey}: ${error.message}`);
-}
-
-export async function readSharedRecords(): Promise<SharedSyncRecord[]> {
-  const supabase = getSupabaseClient();
-  if (!supabase) throw new Error('Supabase sync is not configured for this build.');
-  const { data: userResult, error: userError } = await supabase.auth.getUser();
-  if (userError) throw new Error(`Could not verify the signed-in account: ${userError.message}`);
-  if (!userResult.user) throw new Error('Sign in before loading LIXZON progress.');
-
-  const { data, error } = await supabase
-    .from('lixzon_sync_records')
-    .select('record_key,payload,updated_at')
-    .eq('user_id', userResult.user.id);
-  if (error) throw new Error(`Could not load shared progress: ${error.message}`);
-  return (data ?? []) as SharedSyncRecord[];
-}
-
-export async function subscribeToSharedRecords(
-  onRecord: (record: SharedSyncRecord) => void,
-): Promise<() => Promise<void>> {
-  const supabase = getSupabaseClient();
-  if (!supabase) throw new Error('Supabase sync is not configured for this build.');
-  const { data: userResult, error: userError } = await supabase.auth.getUser();
-  if (userError) throw new Error(`Could not verify the signed-in account: ${userError.message}`);
-  if (!userResult.user) throw new Error('Sign in before subscribing to LIXZON progress.');
-  const userId = userResult.user.id;
-
-  if (channel) {
-    await supabase.removeChannel(channel);
-    channel = null;
-  }
-  channel = supabase
-    .channel(`lixzon-sync:${userId}`)
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'lixzon_sync_records',
-        filter: `user_id=eq.${userId}`,
-      },
-      (change) => {
-        const row = change.new as Partial<SharedSyncRow>;
-        if (
-          typeof row.record_key === 'string' &&
-          typeof row.updated_at === 'string' &&
-          typeof row.payload === 'object' &&
-          row.payload !== null &&
-          !Array.isArray(row.payload)
-        ) {
-          onRecord({
-            record_key: row.record_key,
-            payload: row.payload as Record<string, unknown>,
-            updated_at: row.updated_at,
-          });
-        }
-      },
-    )
-    .subscribe((status, error) => {
-      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-        console.error('LIXZON sync realtime subscription failed.', error);
-      }
-    });
-
-  const subscription = channel;
-  return async () => {
-    if (channel !== subscription) return;
-    await supabase.removeChannel(subscription);
-    channel = null;
-  };
 }

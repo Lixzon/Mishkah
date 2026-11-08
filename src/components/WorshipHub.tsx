@@ -362,7 +362,7 @@ export function WorshipHub({ preferences, palette, date, initialTab = 'Hadith', 
             ))}
           </View>
           {!extendedHadithUnlocked ? (
-            <Text style={styles.collectionLock}>Bukhari and Muslim selections unlock after a verified 7-day Furqan reading streak. Daily Hadith and Nawawi 40 remain available.</Text>
+            <Text style={styles.collectionLock}>Bukhari and Muslim selections unlock after a 7-day Mishkah practice streak. Daily Hadith and Nawawi 40 remain available.</Text>
           ) : null}
           <View style={styles.listGroup}>
             {filteredHadiths.map((entry) => (
@@ -562,7 +562,7 @@ export function WorshipHub({ preferences, palette, date, initialTab = 'Hadith', 
           {!reciterLibraryUnlocked ? (
             <View style={styles.lockedPanel}>
               <Text style={styles.lockedTitle}>Reciter library locked</Text>
-              <Text style={styles.bodyText}>Connect your Google account to the LIXZON sync service and reach a verified 21-day Furqan reading streak to unlock audio reciters.</Text>
+              <Text style={styles.bodyText}>Reach a 21-day Mishkah practice streak to unlock audio reciters.</Text>
             </View>
           ) : (
             <>

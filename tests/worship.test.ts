@@ -114,7 +114,7 @@ describe('offline worship library', () => {
 
   it('answers worship questions from the offline catalog and routes reciter help', () => {
     assert.match(getContextualAnswer('dua for travel').answer, /journey|return/i);
-    assert.match(getContextualAnswer('open reciter library').answer, /21-day Furqan reading streak/);
+    assert.match(getContextualAnswer('open reciter library').answer, /21-day Mishkah practice streak/);
     assert.match(getContextualAnswer('qibla direction').answer, /Guidance → Qibla/);
   });
 });
