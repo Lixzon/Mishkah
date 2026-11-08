@@ -15,8 +15,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export async function searchRafiqOnline(
   endpoint: string,
   query: string,
+  locale = 'en',
 ): Promise<RafiqOnlineAnswer> {
-  const url = new URL(endpoint);
+  const cleanQuery = query.trim();
+  if (!cleanQuery || cleanQuery.length > 1000) {
+    throw new Error('Enter a question of 1,000 characters or fewer.');
+  }
+
+  let url: URL;
+  try {
+    url = new URL(endpoint);
+  } catch {
+    throw new Error('Rafiq online search is not configured with a valid endpoint.');
+  }
   if (url.protocol !== 'https:' && url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') {
     throw new Error('Rafiq online search requires a secure HTTPS endpoint.');
   }
@@ -28,7 +39,7 @@ export async function searchRafiqOnline(
     response = await fetch(url.toString(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ query: query.trim(), locale: 'en' }),
+      body: JSON.stringify({ query: cleanQuery, locale }),
       signal: controller.signal,
     });
   } catch (error) {
@@ -40,9 +51,7 @@ export async function searchRafiqOnline(
     clearTimeout(timeout);
   }
 
-  if (!response.ok) {
-    throw new Error(`Rafiq online search failed (HTTP ${response.status}).`);
-  }
+  if (!response.ok) throw new Error(`Rafiq online search failed (HTTP ${response.status}).`);
 
   let payload: unknown;
   try {

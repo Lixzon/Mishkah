@@ -4,7 +4,7 @@ import * as Crypto from 'expo-crypto';
 import * as SplashScreen from 'expo-splash-screen';
 import * as WebBrowser from 'expo-web-browser';
 import { useIdTokenAuthRequest } from 'expo-auth-session/providers/google';
-import { type ComponentRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   AppState,
@@ -64,6 +64,7 @@ import {
 } from './src/services/preferences';
 import { schedulePrayerReminders } from './src/services/notifications';
 import { GoogleSignInButton } from './src/components/GoogleSignInButton';
+import { VoiceSearchButton } from './src/components/VoiceSearchButton';
 import { WorshipHub, type WorshipTab } from './src/components/WorshipHub';
 import { GuidanceHub } from './src/components/GuidanceHub';
 import { HISN_AL_MUSLIM_DUAS } from './src/domain/adhkar';
@@ -93,34 +94,6 @@ WebBrowser.maybeCompleteAuthSession();
 
 type Screen = 'Prayer' | 'Global' | 'Fasting' | 'Guide' | 'More' | 'Worship' | 'Settings' | 'Community';
 type PrimaryScreen = 'Prayer' | 'Worship' | 'Community' | 'Guide' | 'More';
-type SpeechResultLike = ArrayLike<{ transcript: string }>;
-interface SpeechRecognitionEventLike {
-  results: ArrayLike<SpeechResultLike>;
-}
-interface SpeechRecognitionErrorLike {
-  error: string;
-}
-interface SpeechRecognitionLike {
-  lang: string;
-  interimResults: boolean;
-  maxAlternatives: number;
-  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
-  onerror: ((event: SpeechRecognitionErrorLike) => void) | null;
-  onend: (() => void) | null;
-  start: () => void;
-  stop: () => void;
-}
-interface SpeechRecognitionWindow extends Window {
-  SpeechRecognition?: new () => SpeechRecognitionLike;
-  webkitSpeechRecognition?: new () => SpeechRecognitionLike;
-}
-interface HeaderAction {
-  label: string;
-  glyph: string;
-  tint: string;
-  background: string;
-  onPress: () => void;
-}
 const PRIMARY_TABS: readonly { screen: PrimaryScreen; label: string; icon: string }[] = [
   { screen: 'Prayer', label: 'Home', icon: '⌂' },
   { screen: 'Worship', label: 'Library', icon: '▤' },
@@ -285,18 +258,17 @@ export default function App() {
   const [capacityModalVisible, setCapacityModalVisible] = useState(false);
   const [profileModalVisible, setProfileModalVisible] = useState(false);
   const [streakModalVisible, setStreakModalVisible] = useState(false);
+  const [prayerModalVisible, setPrayerModalVisible] = useState(false);
   const [universalSearchVisible, setUniversalSearchVisible] = useState(false);
   const [universalSearchQuery, setUniversalSearchQuery] = useState('');
-  const [isVoiceSearching, setIsVoiceSearching] = useState(false);
-  const [voiceSearchMessage, setVoiceSearchMessage] = useState('');
-  const speechRecognition = useRef<SpeechRecognitionLike | null>(null);
-  const citySearchRef = useRef<ComponentRef<typeof TextInput>>(null);
+  const [universalSearchStatus, setUniversalSearchStatus] = useState('');
   const [worshipTab, setWorshipTab] = useState<WorshipTab>('Hadith');
   const [guidanceSection, setGuidanceSection] = useState<'overview' | 'qibla' | 'wellness'>('overview');
   const [guideQuery, setGuideQuery] = useState('');
   const [guideAnswer, setGuideAnswer] = useState(getLocalAnswer(''));
-  const [onlineAnswer, setOnlineAnswer] = useState<RafiqOnlineAnswer | null>(null);
-  const [isSearchingOnline, setIsSearchingOnline] = useState(false);
+  const [guideOnlineAnswer, setGuideOnlineAnswer] = useState<RafiqOnlineAnswer | null>(null);
+  const [guideOnlineError, setGuideOnlineError] = useState('');
+  const [guideOnlineLoading, setGuideOnlineLoading] = useState(false);
   const [healthMessage, setHealthMessage] = useState('');
   const [developerKey, setDeveloperKey] = useState('');
   const [developerUnlocked, setDeveloperUnlocked] = useState(false);
@@ -341,10 +313,6 @@ export default function App() {
     getCity(DEFAULT_PREFERENCES.selectedCityId);
 
   useEffect(() => {
-    if (screen === 'Global') citySearchRef.current?.focus();
-  }, [screen]);
-
-  useEffect(() => {
     let active = true;
     Promise.all([
       loadPreferences().then(async (loadedPreferences) => {
@@ -383,11 +351,6 @@ export default function App() {
       uninstallBatteryGovernor();
       uninstallExceptionRecorder?.();
     };
-  }, []);
-
-  useEffect(() => () => {
-    speechRecognition.current?.stop();
-    speechRecognition.current = null;
   }, []);
 
   useEffect(() => {
@@ -859,33 +822,38 @@ export default function App() {
   const askGuide = (query: string) => {
     setGuideQuery(query);
     setGuideAnswer(getLocalAnswer(query));
-    setOnlineAnswer(null);
+    setGuideOnlineAnswer(null);
+    setGuideOnlineError('');
   };
 
-  const searchOnline = async (query: string) => {
+  const searchGuideOnline = async (query: string) => {
+    const cleanQuery = query.trim();
+    if (!cleanQuery) return;
+    setGuideQuery(cleanQuery);
+    setGuideAnswer(getLocalAnswer(cleanQuery));
+    setGuideOnlineAnswer(null);
+    setGuideOnlineError('');
     if (!rafiqApiUrl) {
-      setNotice('Current online answers are not configured. The offline guide is still available.');
+      setGuideOnlineError('Online answers are not configured in this build. Offline guidance is still available.');
       return;
     }
-    if (!query.trim()) {
-      setNotice('Enter a question before searching current sources.');
-      return;
-    }
-    setIsSearchingOnline(true);
-    setOnlineAnswer(null);
+    setGuideOnlineLoading(true);
     try {
-      setOnlineAnswer(await searchRafiqOnline(rafiqApiUrl, query));
+      const locale = Platform.OS === 'web' && typeof navigator !== 'undefined'
+        ? navigator.language
+        : 'en';
+      setGuideOnlineAnswer(await searchRafiqOnline(rafiqApiUrl, cleanQuery, locale));
     } catch (error) {
-      setNotice(friendlyError(error, 'Rafiq could not search current sources.'));
+      setGuideOnlineError(error instanceof Error ? error.message : 'Rafiq could not complete the online search.');
     } finally {
-      setIsSearchingOnline(false);
+      setGuideOnlineLoading(false);
     }
   };
 
-  const searchAndNavigate = (queryValue: string) => {
-    const query = queryValue.trim();
+  const submitUniversalSearch = (searchQuery = universalSearchQuery) => {
+    const query = searchQuery.trim();
     if (!query) return;
-    const normalized = query.toLocaleLowerCase();
+    const normalized = query.toLocaleLowerCase().replace(/[\u2018\u2019\u02bc]/g, "'");
     const destination: Screen = /community|project idea|event idea/.test(normalized)
       ? 'Community'
       : /qibla|qiblah|at.?tibb|remedy|health|wellness/.test(normalized)
@@ -902,7 +870,10 @@ export default function App() {
                   ? 'Prayer'
                   : 'Guide';
     setScreen(destination);
-    if (destination === 'Guide') askGuide(query);
+    if (destination === 'Guide') {
+      setGuidanceSection(/qibla|qiblah/.test(normalized) ? 'qibla' : 'overview');
+      askGuide(query);
+    }
     if (destination === 'Worship') {
       setWorshipTab(/tasbeeh|tasbih|dhikr/.test(normalized)
         ? 'Tasbeeh'
@@ -913,142 +884,8 @@ export default function App() {
             : 'Hadith');
     }
     setUniversalSearchVisible(false);
+    setUniversalSearchStatus('');
   };
-
-  const submitUniversalSearch = () => searchAndNavigate(universalSearchQuery);
-
-  const startVoiceSearch = () => {
-    if (Platform.OS !== 'web' || typeof window === 'undefined') {
-      setVoiceSearchMessage('Voice search is not available in this app build. You can still type your search.');
-      return;
-    }
-    const SpeechRecognition = (window as SpeechRecognitionWindow).SpeechRecognition ??
-      (window as SpeechRecognitionWindow).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setVoiceSearchMessage('This browser does not support voice search. Try a supported browser or type your search.');
-      return;
-    }
-    if (speechRecognition.current) {
-      speechRecognition.current.stop();
-      speechRecognition.current = null;
-      setIsVoiceSearching(false);
-      return;
-    }
-    const recognition = new SpeechRecognition();
-    setVoiceSearchMessage('');
-    recognition.lang = 'en-US';
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    recognition.onresult = (event) => {
-      const transcript = event.results[0]?.[0]?.transcript?.trim();
-      if (transcript) {
-        setVoiceSearchMessage('');
-        setUniversalSearchQuery(transcript);
-        searchAndNavigate(transcript);
-      }
-    };
-    recognition.onerror = (event) => {
-      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-        setVoiceSearchMessage('Microphone access was denied. Allow it in your browser settings, or type your search.');
-      } else {
-        setVoiceSearchMessage(`Voice search could not complete (${event.error}). Please try again or type your search.`);
-      }
-    };
-    recognition.onend = () => {
-      speechRecognition.current = null;
-      setIsVoiceSearching(false);
-    };
-    speechRecognition.current = recognition;
-    setIsVoiceSearching(true);
-    try {
-      recognition.start();
-    } catch (error) {
-      speechRecognition.current = null;
-      setIsVoiceSearching(false);
-      setVoiceSearchMessage(friendlyError(error, 'Voice search could not start.'));
-    }
-  };
-
-  const searchAction: HeaderAction = {
-    label: 'Search',
-    glyph: '⌕',
-    tint: '#146B5B',
-    background: '#DDEFE8',
-    onPress: () => setUniversalSearchVisible(true),
-  };
-  const rafiqAction: HeaderAction = {
-    label: 'Rafiq AI',
-    glyph: '✦',
-    tint: '#7546A8',
-    background: '#EEE5F6',
-    onPress: () => setScreen('Guide'),
-  };
-  const headerLeftActions: HeaderAction[] = screen === 'Prayer'
-    ? [
-        {
-          label: `Streak ${syncState?.streak ?? 0}`,
-          glyph: '🔥',
-          tint: '#A65322',
-          background: '#FCE8D8',
-          onPress: () => setStreakModalVisible(true),
-        },
-        {
-          label: 'Prayer',
-          glyph: '☾',
-          tint: '#176A83',
-          background: '#DDEFF4',
-          onPress: () => setScreen('Global'),
-        },
-      ]
-    : screen === 'Global'
-      ? [
-          { label: 'Home', glyph: '⌂', tint: '#146B5B', background: '#DDEFE8', onPress: () => setScreen('Prayer') },
-          {
-            label: 'Add city',
-            glyph: '+',
-            tint: '#176A83',
-            background: '#DDEFF4',
-            onPress: () => {
-              citySearchRef.current?.focus();
-            },
-          },
-        ]
-      : screen === 'Worship'
-        ? [
-            { label: 'Hadith', glyph: '۞', tint: '#A65322', background: '#FCE8D8', onPress: () => setWorshipTab('Hadith') },
-            { label: 'Du’as', glyph: '✧', tint: '#7546A8', background: '#EEE5F6', onPress: () => setWorshipTab('Duas') },
-          ]
-        : screen === 'Guide'
-          ? [
-              { label: 'Qibla', glyph: '◉', tint: '#176A83', background: '#DDEFF4', onPress: () => setGuidanceSection('qibla') },
-              { label: 'Wellness', glyph: '✿', tint: '#146B5B', background: '#DDEFE8', onPress: () => setGuidanceSection('wellness') },
-            ]
-          : screen === 'More'
-            ? [
-                { label: 'Account', glyph: '◎', tint: '#7546A8', background: '#EEE5F6', onPress: () => setProfileModalVisible(true) },
-                { label: 'Settings', glyph: '⚙', tint: '#A65322', background: '#FCE8D8', onPress: () => setScreen('Settings') },
-              ]
-            : screen === 'Settings'
-              ? [
-                  { label: 'Profile', glyph: '◉', tint: '#7546A8', background: '#EEE5F6', onPress: () => setScreen('More') },
-                  { label: 'Prayer', glyph: '☾', tint: '#176A83', background: '#DDEFF4', onPress: () => setScreen('Global') },
-                ]
-              : screen === 'Fasting'
-                ? [
-                    { label: 'Home', glyph: '⌂', tint: '#146B5B', background: '#DDEFE8', onPress: () => setScreen('Prayer') },
-                    { label: 'Reminders', glyph: '◷', tint: '#A65322', background: '#FCE8D8', onPress: () => setScreen('Settings') },
-                  ]
-                : [
-                    { label: 'Home', glyph: '⌂', tint: '#146B5B', background: '#DDEFE8', onPress: () => setScreen('Prayer') },
-                    {
-                      label: 'About',
-                      glyph: 'i',
-                      tint: '#176A83',
-                      background: '#DDEFF4',
-                      onPress: () => setNotice('Community Hub is a placeholder for now; proposals and chat are not active.'),
-                    },
-                  ];
-  const headerRightActions = [searchAction, rafiqAction];
 
   if (!isReady || !city || !prayerTimes || !nextPrayer) {
     return (
@@ -1102,40 +939,137 @@ export default function App() {
         ) : null}
         <View style={[styles.mainColumn, isWideLayout && styles.mainColumnWide]}>
         <View style={styles.topBar}>
-          <View style={styles.headerActions}>
-            <View style={styles.headerActionGroup}>
-              {headerLeftActions.map((action) => (
+          {screen === 'Prayer' ? (
+            <View style={styles.homeHeader}>
+              <View style={styles.headerActions}>
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={action.label}
-                  key={action.label}
-                  onPress={action.onPress}
+                  accessibilityLabel={`Furqan streak, ${syncState?.streak ?? 0} days`}
+                  onPress={() => setStreakModalVisible(true)}
                   style={styles.headerActionButton}
                 >
-                  <Text style={[styles.headerActionGlyph, { color: action.tint, backgroundColor: action.background }]}>
-                    {action.glyph}
-                  </Text>
-                  <Text numberOfLines={1} style={styles.headerActionLabel}>{action.label}</Text>
+                  <Text style={[styles.headerActionGlyph, styles.streakGlyph]}>🔥</Text>
+                  <Text style={styles.headerActionLabel}>{syncState?.streak ?? 0} day streak</Text>
                 </Pressable>
-              ))}
-            </View>
-            <View style={styles.headerActionGroup}>
-              {headerRightActions.map((action) => (
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={action.label === 'Search' ? 'Search Mishkah' : 'Open Rafiq guidance'}
-                  key={action.label}
-                  onPress={action.onPress}
+                  accessibilityLabel="Open prayer schedule and places"
+                  onPress={() => setPrayerModalVisible(true)}
                   style={styles.headerActionButton}
                 >
-                  <Text style={[styles.headerActionGlyph, { color: action.tint, backgroundColor: action.background }]}>
-                    {action.glyph}
-                  </Text>
-                  <Text numberOfLines={1} style={styles.headerActionLabel}>{action.label}</Text>
+                  <Text style={[styles.headerActionGlyph, styles.prayerGlyph]}>☾</Text>
+                  <Text style={styles.headerActionLabel}>Prayer</Text>
                 </Pressable>
-              ))}
+              </View>
+              <View style={styles.headerSpacer} />
+              <View style={styles.headerActions}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Search Mishkah"
+                  onPress={() => {
+                    setUniversalSearchStatus('');
+                    setUniversalSearchVisible(true);
+                  }}
+                  style={styles.headerActionButton}
+                >
+                  <Text style={styles.headerActionGlyph}>⌕</Text>
+                  <Text style={styles.headerActionLabel}>Search</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Open Rafiq AI"
+                  onPress={() => {
+                    setGuidanceSection('overview');
+                    setScreen('Guide');
+                  }}
+                  style={styles.headerActionButton}
+                >
+                  <Text style={styles.headerActionGlyph}>✦</Text>
+                  <Text style={styles.headerActionLabel}>Rafiq</Text>
+                </Pressable>
+              </View>
             </View>
-          </View>
+          ) : (
+            <>
+              <View style={styles.contextHeader}>
+                <Text style={styles.contextHeaderGlyph}>
+                  {screen === 'Worship' ? '▤' :
+                    screen === 'Community' ? '◎' :
+                      screen === 'Guide' ? '✦' :
+                        screen === 'More' ? '◉' :
+                          screen === 'Global' ? '☾' :
+                            screen === 'Fasting' ? '☽' : '⚙'}
+                </Text>
+                <View>
+                  <Text style={styles.contextHeaderTitle}>
+                    {screen === 'Worship' ? 'Library' :
+                      screen === 'Community' ? 'Community Hub' :
+                        screen === 'Guide' ? 'Guidance' :
+                          screen === 'More' ? 'Profile' :
+                            screen === 'Global' ? 'Prayer & places' :
+                              screen === 'Fasting' ? 'Fasting' : 'Settings'}
+                  </Text>
+                  <Text style={styles.contextHeaderSubtitle}>
+                    {screen === 'Worship' ? 'Qur’an, worship and remembrance' :
+                      screen === 'Community' ? 'Ideas and community updates' :
+                        screen === 'Guide' ? 'Rafiq · offline and online guidance' :
+                          screen === 'More' ? 'Account, progress and preferences' :
+                            screen === 'Global' ? 'Times across your places' :
+                              screen === 'Fasting' ? 'Suhoor, iftar and your routine' : 'Make Mishkah yours'}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.headerActions}>
+                {screen === 'Worship' || screen === 'Community' ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Search Mishkah"
+                    onPress={() => {
+                      setUniversalSearchStatus('');
+                      setUniversalSearchVisible(true);
+                    }}
+                    style={styles.headerActionButton}
+                  >
+                    <Text style={styles.headerActionGlyph}>⌕</Text>
+                    <Text style={styles.headerActionLabel}>Search</Text>
+                  </Pressable>
+                ) : null}
+                {screen === 'More' ? (
+                  <>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Account and sync"
+                      onPress={() => setProfileModalVisible(true)}
+                      style={styles.headerActionButton}
+                    >
+                      <Text style={styles.headerActionGlyph}>◎</Text>
+                      <Text style={styles.headerActionLabel}>Account</Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Open settings"
+                      onPress={() => setScreen('Settings')}
+                      style={styles.headerActionButton}
+                    >
+                      <Text style={styles.headerActionGlyph}>⚙</Text>
+                      <Text style={styles.headerActionLabel}>Settings</Text>
+                    </Pressable>
+                  </>
+                ) : null}
+                {screen === 'Settings' ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Back to profile"
+                    onPress={() => setScreen('More')}
+                    style={styles.headerActionButton}
+                  >
+                    <Text style={styles.headerActionGlyph}>‹</Text>
+                    <Text style={styles.headerActionLabel}>Profile</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            </>
+          )}
         </View>
 
         <ScrollView
@@ -1367,8 +1301,8 @@ export default function App() {
           {screen === 'Global' ? (
             <>
               <View style={styles.introBlock}>
-                <Text style={styles.eyebrow}>PRAYER & GLOBAL TIMES</Text>
-                <Text style={styles.pageTitle}>Prayer times, wherever you are.</Text>
+                <Text style={styles.eyebrow}>YOUR FIVE-SLOT HUB</Text>
+                <Text style={styles.pageTitle}>A little closer, everywhere.</Text>
                 <Text style={styles.bodyText}>
                   Prayer times are worked out only when you open a place. Your saved cities stay on this device.
                 </Text>
@@ -1377,7 +1311,6 @@ export default function App() {
                 <Text style={styles.searchIcon}>⌕</Text>
                 <TextInput
                   accessibilityLabel="Search cities"
-                  ref={citySearchRef}
                   onChangeText={setCityQuery}
                   placeholder="Search a city or country"
                   placeholderTextColor={palette.muted}
@@ -1603,9 +1536,9 @@ export default function App() {
             <>
               <View style={styles.introBlock}>
                 <Text style={styles.eyebrow}>YOUR MISHKAH COMPANION</Text>
-                <Text style={styles.pageTitle}>A little guidance.</Text>
+                <Text style={styles.pageTitle}>Ask Rafiq.</Text>
                 <Text style={styles.bodyText}>
-                  Start with private, on-device guidance or search current online sources when configured.
+                  Get an instant offline answer, or search for current information and source links when online service is configured.
                 </Text>
               </View>
               <View style={styles.assistantCard}>
@@ -1615,7 +1548,9 @@ export default function App() {
                   </View>
                   <View>
                     <Text style={styles.assistantTitle}>Rafiq AI</Text>
-                    <Text style={styles.localBadge}>ON-DEVICE · OFFLINE READY</Text>
+                    <Text style={styles.localBadge}>
+                      {rafiqApiUrl ? 'OFFLINE + ONLINE SOURCES' : 'OFFLINE READY · ONLINE NOT CONFIGURED'}
+                    </Text>
                   </View>
                 </View>
                 <TextInput
@@ -1628,51 +1563,49 @@ export default function App() {
                   style={styles.guideInput}
                   value={guideQuery}
                 />
-                <ActionButton
-                  label="Find a gentle answer"
-                  onPress={() => askGuide(guideQuery)}
-                  palette={palette}
-                  styles={styles}
-                />
-                <ActionButton
-                  label={isSearchingOnline ? 'Searching current sources…' : 'Search current online sources'}
-                  onPress={() => void searchOnline(guideQuery)}
-                  palette={palette}
-                  styles={styles}
-                  disabled={isSearchingOnline}
-                  busy={isSearchingOnline}
-                />
-                {!rafiqApiUrl ? (
-                  <Text style={styles.settingDescription}>
-                    Online answers are not configured in this build. Offline guidance remains available.
-                  </Text>
-                ) : null}
+                <View style={styles.guideActions}>
+                  <ActionButton
+                    label="Ask offline"
+                    onPress={() => askGuide(guideQuery)}
+                    palette={palette}
+                    styles={styles}
+                  />
+                  <ActionButton
+                    label={guideOnlineLoading ? 'Searching…' : 'Search online'}
+                    onPress={() => void searchGuideOnline(guideQuery)}
+                    palette={palette}
+                    styles={styles}
+                    disabled={guideOnlineLoading}
+                    busy={guideOnlineLoading}
+                  />
+                </View>
                 <View style={styles.answerCard}>
-                  <Text style={styles.answerTitle}>{guideAnswer.title}</Text>
+                  <Text style={styles.answerTitle}>Offline guidance · {guideAnswer.title}</Text>
                   <Text style={styles.answerText}>{guideAnswer.answer}</Text>
                 </View>
-                {onlineAnswer ? (
+                {guideOnlineError ? (
+                  <Text accessibilityRole="alert" style={styles.healthMessage}>{guideOnlineError}</Text>
+                ) : null}
+                {guideOnlineAnswer ? (
                   <View style={styles.answerCard}>
-                    <Text style={styles.answerTitle}>Current sources</Text>
-                    <Text style={styles.answerText}>{onlineAnswer.answer}</Text>
-                    {onlineAnswer.sources.map((source) => (
+                    <Text style={styles.answerTitle}>Online answer · verify the sources</Text>
+                    <Text style={styles.answerText}>{guideOnlineAnswer.answer}</Text>
+                    <Text style={styles.sectionCaption}>Sources</Text>
+                    {guideOnlineAnswer.sources.map((source) => (
                       <Pressable
-                        accessibilityRole="link"
                         key={source.url}
+                        accessibilityRole="link"
                         onPress={() => void openSupportLink(source.url)}
                         style={styles.faqRow}
                       >
-                        <Text style={styles.faqText}>{source.title}</Text>
+                        <Text style={styles.textLink}>{source.title}</Text>
                         <Text style={styles.faqArrow}>↗</Text>
                       </Pressable>
                     ))}
-                    <Text style={styles.settingDescription}>
-                      Online answers can be incomplete or out of date; verify important matters with trusted sources.
-                    </Text>
                   </View>
                 ) : null}
               </View>
-              <Text style={styles.sectionCaption}>A few things you can ask</Text>
+              <Text style={styles.sectionCaption}>Offline topics</Text>
               {getLocalFaqs().map((faq) => (
                 <Pressable key={faq.title} onPress={() => askGuide(faq.title)} style={styles.faqRow}>
                   <Text style={styles.faqText}>{faq.title}</Text>
@@ -1682,7 +1615,7 @@ export default function App() {
               <View style={styles.disclaimerCard}>
                 <Text style={styles.disclaimerTitle}>A thoughtful companion, not a fatwa.</Text>
                 <Text style={styles.disclaimerText}>
-                  For personal religious rulings, health concerns, and local practice, speak with a trusted scholar or qualified professional.
+                  Online answers can be incomplete or out of date. Check primary sources; ask a trusted scholar about personal rulings and a qualified professional about health.
                 </Text>
               </View>
               <GuidanceHub
@@ -2164,38 +2097,38 @@ export default function App() {
         <View style={styles.profileBackdrop}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Close streak"
+            accessibilityLabel="Close Furqan streak details"
             onPress={() => setStreakModalVisible(false)}
             style={StyleSheet.absoluteFill}
           />
-          <View style={styles.profileDrawer}>
+          <View style={styles.detailDrawer}>
             <View style={styles.profileDrawerHandle} />
             <View style={styles.profileDrawerHeading}>
               <View>
                 <Text style={styles.settingGroupTitle}>Furqan reading streak</Text>
-                <Text style={styles.settingDescription}>Your Qur’an reading progress from the companion app.</Text>
+                <Text style={styles.settingDescription}>Your Quran sibling-app progress, reflected here.</Text>
               </View>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Close streak"
+                accessibilityLabel="Close streak details"
                 onPress={() => setStreakModalVisible(false)}
                 style={styles.profileCloseButton}
               >
                 <Text style={styles.profileCloseText}>×</Text>
               </Pressable>
             </View>
+            <View style={styles.streakHero}>
+              <Text style={styles.streakHeroNumber}>{syncState?.streak ?? 0}</Text>
+              <Text style={styles.streakHeroLabel}>day streak</Text>
+              <Text style={styles.settingDescription}>
+                {syncState?.streak
+                  ? 'Latest available progress from Furqan.'
+                  : authSession
+                    ? 'No Furqan streak has synced yet.'
+                    : 'Connect the same account used in Furqan to see your streak.'}
+              </Text>
+            </View>
             <View style={styles.streakPanel}>
-              <View style={styles.streakHeading}>
-                <View>
-                  <Text style={styles.moreRowTitle}>Current streak</Text>
-                  <Text style={styles.moreRowDescription}>
-                    {syncApiUrl
-                      ? 'Verified progress refreshes when your account connects.'
-                      : 'Connect a shared sync service to import verified Furqan progress.'}
-                  </Text>
-                </View>
-                <Text style={styles.streakCount}>{syncState?.streak ?? 0}<Text style={styles.streakUnit}> days</Text></Text>
-              </View>
               {([
                 { id: 'extended-hadith', days: 7, label: 'Expanded Hadith collection' },
                 { id: 'premium-theme-collection', days: 14, label: 'Premium theme collection' },
@@ -2212,12 +2145,112 @@ export default function App() {
               })}
             </View>
             <ActionButton
-              label="Open Furqan"
-              onPress={() => void openSupportLink('https://furqan-quran-app.vercel.app/')}
+              label={authSession ? 'Open account & sync' : 'Connect Furqan account'}
+              onPress={() => {
+                setStreakModalVisible(false);
+                setScreen('More');
+                if (!authSession) setProfileModalVisible(true);
+              }}
               palette={palette}
               styles={styles}
             />
+            {!syncConfigured ? (
+              <Text style={styles.searchHelper}>Cross-device streak sync needs the shared sync service configured.</Text>
+            ) : null}
           </View>
+        </View>
+      </Modal>
+
+      <Modal
+        animationType="slide"
+        onRequestClose={() => setPrayerModalVisible(false)}
+        transparent
+        visible={prayerModalVisible}
+      >
+        <View style={styles.profileBackdrop}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Close prayer details"
+            onPress={() => setPrayerModalVisible(false)}
+            style={StyleSheet.absoluteFill}
+          />
+          <ScrollView
+            contentContainerStyle={styles.prayerDrawerContent}
+            style={styles.prayerDrawer}
+          >
+            <View style={styles.profileDrawerHandle} />
+            <View style={styles.profileDrawerHeading}>
+              <View>
+                <Text style={styles.settingGroupTitle}>Prayer schedule</Text>
+                <Text style={styles.settingDescription}>{city.name} · {city.country} · {preferences.calculationMethod}</Text>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close prayer details"
+                onPress={() => setPrayerModalVisible(false)}
+                style={styles.profileCloseButton}
+              >
+                <Text style={styles.profileCloseText}>×</Text>
+              </Pressable>
+            </View>
+            <View style={styles.prayerList}>
+              {PRAYER_ORDER.map((prayerName) => {
+                const isNextPrayer = prayerName === nextPrayer.name;
+                const isObligatory = prayerName !== 'Sunrise';
+                const prayerCompleted = isObligatory && completedPrayers.includes(prayerName);
+                return (
+                  <View key={prayerName} style={styles.prayerRow}>
+                    <View style={styles.prayerNameGroup}>
+                      <View style={[styles.prayerDot, isNextPrayer && styles.activePrayerDot]} />
+                      <Text style={[styles.prayerName, isNextPrayer && styles.activePrayerName]}>{prayerName}</Text>
+                      {isNextPrayer ? <Text style={styles.nextTag}>NEXT</Text> : null}
+                    </View>
+                    <View style={styles.prayerRowRight}>
+                      <Text style={[styles.prayerTime, isNextPrayer && styles.activePrayerName]}>
+                        {formatPrayerTime(prayerTimes[prayerName], city, localDate)}
+                      </Text>
+                      {isObligatory ? (
+                        <Pressable
+                          accessibilityRole="checkbox"
+                          accessibilityLabel={`${prayerName} prayer completed`}
+                          accessibilityState={{ checked: prayerCompleted }}
+                          onPress={() => togglePrayer(prayerName)}
+                          style={[styles.prayerCheckButton, prayerCompleted && styles.prayerCheckButtonDone]}
+                        >
+                          <Text style={[styles.prayerCheckText, prayerCompleted && styles.prayerCheckTextDone]}>
+                            {prayerCompleted ? '✓' : '○'}
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+            <Text style={styles.settingDescription}>
+              Times are calculated on this device. Choose places to compare schedules across cities and time zones.
+            </Text>
+            <View style={styles.guideActions}>
+              <ActionButton
+                label="Global prayer places"
+                onPress={() => {
+                  setPrayerModalVisible(false);
+                  setScreen('Global');
+                }}
+                palette={palette}
+                styles={styles}
+              />
+              <ActionButton
+                label="Prayer reminders"
+                onPress={() => {
+                  setPrayerModalVisible(false);
+                  setScreen('Settings');
+                }}
+                palette={palette}
+                styles={styles}
+              />
+            </View>
+          </ScrollView>
         </View>
       </Modal>
 
@@ -2232,36 +2265,34 @@ export default function App() {
           <View style={styles.searchDrawer}>
             <View style={styles.profileDrawerHandle} />
             <Text style={styles.settingGroupTitle}>Search Mishkah</Text>
-            <View style={styles.searchEntryRow}>
+            <View style={styles.searchInputRow}>
               <TextInput
                 accessibilityLabel="Search Mishkah features"
                 autoFocus
-                onChangeText={setUniversalSearchQuery}
-                onSubmitEditing={submitUniversalSearch}
+                onChangeText={(value) => {
+                  setUniversalSearchQuery(value);
+                  setUniversalSearchStatus('');
+                }}
+                onSubmitEditing={() => submitUniversalSearch()}
                 placeholder="Try Qibla, Du’a, Tasbeeh, fasting…"
                 placeholderTextColor={palette.muted}
                 returnKeyType="search"
-                style={[styles.guideInput, styles.searchEntryInput]}
+                style={[styles.guideInput, styles.searchTextInput]}
                 value={universalSearchQuery}
               />
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={isVoiceSearching ? 'Stop voice search' : 'Search by voice'}
-                onPress={startVoiceSearch}
-                style={[styles.voiceSearchButton, isVoiceSearching && styles.voiceSearchButtonActive]}
-              >
-                <Text style={[styles.voiceSearchGlyph, isVoiceSearching && styles.voiceSearchGlyphActive]}>
-                  {isVoiceSearching ? '■' : '🎙'}
-                </Text>
-              </Pressable>
+              <VoiceSearchButton
+                onStatus={setUniversalSearchStatus}
+                onTranscript={(transcript) => {
+                  setUniversalSearchQuery(transcript);
+                  submitUniversalSearch(transcript);
+                }}
+              />
             </View>
-            <Text style={styles.settingDescription}>
-              {voiceSearchMessage || (isVoiceSearching
-                ? 'Listening… tap the microphone to stop.'
-                : 'Voice search uses your browser’s speech service. Microphone support depends on your browser; you can always type instead.')}
+            <Text accessibilityLiveRegion="polite" style={styles.searchHelper}>
+              {universalSearchStatus || 'Search a feature by typing or tapping the microphone.'}
             </Text>
-            <ActionButton label="Search and open" onPress={submitUniversalSearch} palette={palette} styles={styles} />
-            <Text style={styles.settingDescription}>Rafiq can guide you to a screen or explain where a feature lives.</Text>
+            <ActionButton label="Search and open" onPress={() => submitUniversalSearch()} palette={palette} styles={styles} />
+            <Text style={styles.settingDescription}>Voice search uses your browser microphone when supported. Rafiq’s online answers are separate and require a configured secure service.</Text>
           </View>
         </View>
       </Modal>
@@ -2462,31 +2493,66 @@ function createStyles(colors: Palette) {
     desktopNavLabelActive: { color: colors.accent, fontWeight: '700' },
     topBar: {
       minHeight: 76,
-      paddingHorizontal: 12,
+      paddingHorizontal: 22,
       paddingTop: Platform.OS === 'android' ? Math.max(NativeStatusBar.currentHeight ?? 0, 10) : 10,
       paddingBottom: 10,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
     },
-    headerActions: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    headerActionGroup: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-    headerActionButton: { minWidth: 44, alignItems: 'center', justifyContent: 'center', paddingVertical: 4 },
-    headerActionGlyph: { width: 30, height: 30, borderRadius: 15, textAlign: 'center', textAlignVertical: 'center', overflow: 'hidden', backgroundColor: colors.surfaceRaised, color: colors.accent, fontSize: 17, lineHeight: 30 },
-    headerActionLabel: { color: colors.muted, fontSize: 8, fontWeight: '600', marginTop: 2 },
-    searchEntryRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-    searchEntryInput: { flex: 1 },
-    voiceSearchButton: {
-      width: 46,
-      height: 46,
+    homeHeader: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+    headerSpacer: { flex: 1 },
+    contextHeader: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 10 },
+    contextHeaderGlyph: {
+      width: 38,
+      height: 38,
       borderRadius: 14,
+      overflow: 'hidden',
+      backgroundColor: colors.goldTint,
+      color: colors.accent,
+      fontSize: 19,
+      lineHeight: 38,
+      textAlign: 'center',
+    },
+    contextHeaderTitle: { color: colors.ink, fontSize: 15, fontWeight: '700' },
+    contextHeaderSubtitle: { color: colors.muted, fontSize: 9, marginTop: 3 },
+    brandLockup: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+    brandMark: {
+      width: 38,
+      height: 38,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: '#145B50',
+    },
+    brandImage: { width: 31, height: 31 },
+    brandName: { color: colors.ink, fontSize: 19, fontWeight: '700', letterSpacing: 0.1 },
+    brandCaption: { color: colors.muted, fontSize: 10, marginTop: 2 },
+    headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    locationButton: {
+      maxWidth: '55%',
+      alignItems: 'flex-end',
+      paddingVertical: 7,
+      paddingLeft: 12,
+    },
+    locationLabel: { color: colors.muted, fontSize: 9, fontWeight: '700', letterSpacing: 1.5 },
+    locationName: { color: colors.ink, fontSize: 13, fontWeight: '600', marginTop: 4 },
+    profileButton: { minWidth: 43, alignItems: 'center', justifyContent: 'center', paddingVertical: 4 },
+    headerActionButton: { minWidth: 42, alignItems: 'center', justifyContent: 'center', paddingVertical: 4 },
+    headerActionGlyph: { width: 30, height: 30, borderRadius: 15, textAlign: 'center', textAlignVertical: 'center', overflow: 'hidden', backgroundColor: colors.surfaceRaised, color: colors.accent, fontSize: 17, lineHeight: 30 },
+    streakGlyph: { backgroundColor: colors.goldTint, color: colors.gold },
+    prayerGlyph: { backgroundColor: colors.accent, color: colors.accentInk },
+    headerActionLabel: { color: colors.muted, fontSize: 8, fontWeight: '600', marginTop: 2 },
+    profileGlyph: {
+      width: 31,
+      height: 31,
+      borderRadius: 16,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: colors.surfaceRaised,
     },
-    voiceSearchButtonActive: { backgroundColor: colors.accent },
-    voiceSearchGlyph: { color: colors.accent, fontSize: 19, fontWeight: '700' },
-    voiceSearchGlyphActive: { color: colors.accentInk },
+    profileGlyphText: { color: colors.accent, fontSize: 17, fontWeight: '600' },
+    profileLabel: { color: colors.muted, fontSize: 8, fontWeight: '600', marginTop: 2 },
     bottomNav: {
       minHeight: 65,
       borderTopWidth: StyleSheet.hairlineWidth,
@@ -2800,6 +2866,19 @@ function createStyles(colors: Palette) {
       paddingHorizontal: 12,
       fontSize: 12,
     },
+    guideActions: { flexDirection: 'row', gap: 8, alignItems: 'stretch' },
+    searchInputRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 5,
+      borderWidth: 1,
+      borderColor: colors.line,
+      borderRadius: 14,
+      backgroundColor: colors.surface,
+      marginTop: 12,
+    },
+    searchTextInput: { flex: 1, minWidth: 0, borderWidth: 0, marginTop: 0 },
+    searchHelper: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 6 },
     actionButton: {
       minHeight: 43,
       paddingHorizontal: 15,
@@ -2842,6 +2921,17 @@ function createStyles(colors: Palette) {
       borderColor: colors.line,
     },
     streakPanel: { marginTop: 10, paddingHorizontal: 13, paddingVertical: 12, borderRadius: 15, backgroundColor: colors.surfaceRaised },
+    streakHero: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 20,
+      paddingHorizontal: 16,
+      marginTop: 12,
+      borderRadius: 18,
+      backgroundColor: colors.goldTint,
+    },
+    streakHeroNumber: { color: colors.accent, fontSize: 48, fontWeight: '800', lineHeight: 54 },
+    streakHeroLabel: { color: colors.ink, fontSize: 14, fontWeight: '700', marginBottom: 4 },
     streakHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingBottom: 8 },
     streakCount: { color: colors.accent, fontSize: 24, fontWeight: '700' },
     streakUnit: { color: colors.muted, fontSize: 9, fontWeight: '500' },
@@ -2909,6 +2999,32 @@ function createStyles(colors: Palette) {
       borderTopLeftRadius: 22,
       borderTopRightRadius: 22,
       backgroundColor: colors.surface,
+    },
+    detailDrawer: {
+      width: '100%',
+      maxWidth: 620,
+      maxHeight: '92%',
+      alignSelf: 'center',
+      paddingHorizontal: 20,
+      paddingTop: 11,
+      paddingBottom: 24,
+      borderTopLeftRadius: 22,
+      borderTopRightRadius: 22,
+      backgroundColor: colors.surface,
+    },
+    prayerDrawer: {
+      width: '100%',
+      maxWidth: 620,
+      maxHeight: '92%',
+      alignSelf: 'center',
+      borderTopLeftRadius: 22,
+      borderTopRightRadius: 22,
+      backgroundColor: colors.surface,
+    },
+    prayerDrawerContent: {
+      paddingHorizontal: 20,
+      paddingTop: 11,
+      paddingBottom: 24,
     },
     searchDrawer: {
       width: '100%',

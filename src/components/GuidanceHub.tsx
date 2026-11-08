@@ -29,7 +29,7 @@ interface GuidanceHubProps {
 type Coordinates = { latitude: number; longitude: number };
 
 export function GuidanceHub({ city, hour, initialSection = 'overview', palette }: GuidanceHubProps) {
-  const [section, setSection] = useState<'overview' | 'qibla' | 'wellness'>('overview');
+  const [section, setSection] = useState<'overview' | 'qibla' | 'wellness'>(initialSection);
   const [coordinates, setCoordinates] = useState<Coordinates>({
     latitude: city.latitude,
     longitude: city.longitude,

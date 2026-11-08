@@ -3,34 +3,42 @@ import test from 'node:test';
 import { searchRafiqOnline } from '../src/services/rafiq';
 
 test('Rafiq online answer validation', async (t) => {
-  await t.test('returns a validated answer and at most five secure source links', async () => {
+  await t.test('returns trimmed answers with at most five secure source links', async () => {
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = async () => new Response(JSON.stringify({
-      answer: 'A current answer.',
-      sources: Array.from({ length: 6 }, (_, index) => ({
-        title: `Source ${index + 1}`,
-        url: `https://example.com/${index + 1}`,
-      })),
-    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    let requestBody: unknown;
+    globalThis.fetch = async (_input, init) => {
+      requestBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({
+        answer: '  A current answer.  ',
+        sources: Array.from({ length: 6 }, (_, index) => ({
+          title: `Source ${index + 1}`,
+          url: `https://example.com/${index + 1}`,
+        })),
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    };
 
     try {
-      const result = await searchRafiqOnline('https://api.example.com/rafiq', '  a question  ');
+      const result = await searchRafiqOnline('https://api.example.com/rafiq', '  a question  ', 'en-GB');
       assert.equal(result.answer, 'A current answer.');
       assert.equal(result.sources.length, 5);
-      assert.equal(result.sources[0]?.url, 'https://example.com/1');
+      assert.deepEqual(requestBody, { query: 'a question', locale: 'en-GB' });
     } finally {
       globalThis.fetch = originalFetch;
     }
   });
 
-  await t.test('rejects insecure online endpoints', async () => {
+  await t.test('rejects insecure endpoints and overlong questions', async () => {
     await assert.rejects(
       searchRafiqOnline('http://api.example.com/rafiq', 'a question'),
       /secure HTTPS endpoint/,
     );
+    await assert.rejects(
+      searchRafiqOnline('https://api.example.com/rafiq', 'a'.repeat(1001)),
+      /1,000 characters or fewer/,
+    );
   });
 
-  await t.test('rejects answers without a secure source link', async () => {
+  await t.test('rejects responses without at least one secure source', async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async () => new Response(JSON.stringify({
       answer: 'An answer without a secure source.',

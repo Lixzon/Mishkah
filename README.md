@@ -45,23 +45,6 @@ the site in Safari and choose **Add to Home Screen** from Share. The PWA caches
 the app shell for offline launching after its first successful load. This
 installs the website as a home-screen app; it is not an APK or App Store binary.
 
-### Rafiq online answers and voice search
-
-Rafiq keeps its on-device guidance available offline. To enable current,
-source-linked answers, configure `EXPO_PUBLIC_RAFIQ_API_URL` to a secured HTTPS
-backend endpoint (localhost is allowed for local development). The app sends a
-POST JSON body shaped as `{ "query": "question", "locale": "en" }`; the endpoint
-must return `{ "answer": "response", "sources": [{ "title": "Source", "url":
-"https://example.com" }] }`. Answers are limited to 12,000 characters, and up to
-five HTTPS source links are displayed. Keep AI/search provider credentials on
-the backend, never in the app. If no endpoint is configured or the network is
-unavailable, offline guidance remains usable.
-
-Voice search is available on web browsers that implement the Web Speech API and
-requires microphone permission. Speech recognition is provided by the browser's
-speech service; support and data handling depend on that browser. Native builds
-can use typed search.
-
 ### Worship library
 
 The **More** section groups Hadith, Tasbeeh, daily Adhkar, Duas, reciters, and
@@ -107,6 +90,23 @@ Set these variables in the build environment before exporting web or building
 native apps. They are read by `app.config.js` and embedded into the app config;
 never put a Google client secret or server credential in these variables.
 
+### Rafiq online answers
+
+Rafiq always keeps the offline guide available. To enable current online answers,
+set `EXPO_PUBLIC_RAFIQ_API_URL` to your secured HTTPS backend before building.
+The app sends a question and locale to that endpoint; it does not contain AI or
+search-provider credentials. The backend must return JSON shaped like
+`{ "answer": "A concise response", "sources": [{ "title": "Source", "url": "https://example.org/article" }] }`.
+Only HTTPS source links are displayed, with up to five citations. The backend
+should retrieve current material, prioritize reputable primary sources, apply
+rate limits and abuse protection, and avoid presenting religious rulings as
+authoritative. Without this configuration, Rafiq continues to answer from the
+offline library and clearly reports that online answers are unavailable.
+
+Voice search is available in browsers that implement the Web Speech API and
+requires microphone permission. Recognition and data handling depend on the
+browser's speech service; native builds can use typed search.
+
 ## Architecture
 
 - `assets/brand-mark.svg` is the source for Mishkah's header, splash, app icon,
@@ -132,8 +132,8 @@ never put a Google client secret or server credential in these variables.
   the app leaves the foreground. Mishkah acquires no wake locks and registers
   no background audio listeners or services.
 - `src/domain/assistant.ts` contains the offline FAQ and checklist answers.
-  `src/services/rafiq.ts` validates optional source-linked answers from the
-  configured backend; provider credentials remain server-side.
+  `src/services/rafiq.ts` optionally calls a secured backend for current online
+  answers and validates that its cited source links use HTTPS.
 
 ## Developer diagnostics key
 
