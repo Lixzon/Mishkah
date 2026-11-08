@@ -9,6 +9,30 @@ type LocalAnswer = {
 
 export function getContextualAnswer(query: string): LocalAnswer {
   const normalized = query.trim().toLocaleLowerCase();
+  if (/qibla|qiblah/.test(normalized)) {
+    return {
+      title: 'Qibla compass',
+      answer: 'Open Guidance → Qibla to view the bearing and, on supported devices, enable the compass. You can use the selected city or grant one-time foreground location access.',
+    };
+  }
+  if (/at.?tibb|remedy|honey|black seed|olive oil|wellness/.test(normalized)) {
+    return {
+      title: 'At-Tibb & wellness',
+      answer: 'Open Guidance → At-Tibb & Adab for carefully contextualized educational notes. These do not replace qualified medical advice or prescribed treatment.',
+    };
+  }
+  if (/community|project idea|event idea/.test(normalized)) {
+    return {
+      title: 'Community Hub',
+      answer: 'The Community Hub is a planned space for reviewed project and event ideas. It is not active yet and has no open chat.',
+    };
+  }
+  if (/story|stories|sahaba|companion|dajjal|end.?times|archive|halal food|adab/.test(normalized)) {
+    return {
+      title: 'Source-linked Islamic archives',
+      answer: 'Open Library → Archives to browse short, source-linked introductions to Qur’anic stories, companions, signs, Adab, and food guidance. The summaries are educational, not fatwas.',
+    };
+  }
   if (/reciter|audio quran|quran audio/.test(normalized)) {
     return {
       title: 'Qur’an reciters',

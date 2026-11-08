@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { getContextualAnswer } from '../domain/assistant';
 
-export type AssistantDestination = 'Prayer' | 'Global' | 'Fasting' | 'Guide' | 'Settings' | 'Worship';
+export type AssistantDestination = 'Prayer' | 'Global' | 'Fasting' | 'Guide' | 'Settings' | 'Worship' | 'Community';
 
 interface AiAssistantBarProps {
   palette: {
@@ -19,6 +19,8 @@ interface AiAssistantBarProps {
 
 function destinationForQuery(query: string): AssistantDestination {
   const normalized = query.toLocaleLowerCase();
+  if (/community|project idea|event idea/.test(normalized)) return 'Community';
+  if (/qibla|qiblah|at.?tibb|remedy|wellness|health/.test(normalized)) return 'Guide';
   if (/reciter|audio quran|quran audio/.test(normalized)) return 'Worship';
   if (/hadith|prophet|sunnah/.test(normalized)) return 'Worship';
   if (/tasbeeh|tasbih|dhikr|adhkar|remembrance/.test(normalized)) return 'Worship';
@@ -74,7 +76,21 @@ export function AiAssistantBar({ palette, onNavigate }: AiAssistantBarProps) {
           <Text style={styles.sendText}>↗</Text>
         </Pressable>
       </View>
-      <Text style={styles.disclosure}>Rafiq AI · On-device answers · offline ready</Text>
+      <View style={styles.voiceRow}>
+        <Text style={styles.disclosure}>Rafiq AI · On-device answers · offline ready</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ disabled: true }}
+          accessibilityHint="A secure voice provider and audio permissions are required before hands-free mode can be enabled."
+          disabled
+          style={styles.voiceButton}
+        >
+          <Text style={styles.voiceButtonText}>◉ Live voice · unavailable</Text>
+        </Pressable>
+      </View>
+      <Text style={styles.voiceNote}>
+        Hands-free voice is not connected; no audio is recorded. A secure provider and platform audio permissions are required.
+      </Text>
     </View>
   );
 }
@@ -88,6 +104,10 @@ function createStyles(colors: AiAssistantBarProps['palette']) {
     sendButton: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accent },
     sendText: { color: colors.accentInk, fontSize: 16, lineHeight: 18 },
     disclosure: { color: colors.muted, fontSize: 8, marginTop: 4, textAlign: 'center' },
+    voiceRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 7, marginTop: 4 },
+    voiceButton: { borderWidth: StyleSheet.hairlineWidth, borderColor: colors.line, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 3, opacity: 0.65 },
+    voiceButtonText: { color: colors.muted, fontSize: 8, fontWeight: '600' },
+    voiceNote: { color: colors.muted, fontSize: 7, marginTop: 3, textAlign: 'center' },
     answer: { padding: 11, marginBottom: 7, backgroundColor: colors.surfaceRaised, borderRadius: 12 },
     answerTitle: { color: colors.ink, fontSize: 11, fontWeight: '700' },
     answerBody: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 4 },

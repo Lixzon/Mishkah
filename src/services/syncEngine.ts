@@ -1,6 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { computeUnlockedFeatures } from '../domain/streakRewards';
+import {
+  isSupabaseSyncConfigured,
+  readSharedRecords,
+  upsertSharedRecord,
+} from './cloudSync';
 
 export { computeUnlockedFeatures } from '../domain/streakRewards';
 
@@ -29,6 +34,10 @@ export interface SyncState {
   linkedAccount: LinkedAccountState;
   streak: number;
   featuresUnlocked: string[];
+  furqanMemorizedCount: number;
+  furqanMemorizedMilestones: number;
+  dailyHighlightDate: string | null;
+  dailyHighlightGlobalAyah: number | null;
 }
 
 export interface FurqanProgressSnapshot {
@@ -41,6 +50,10 @@ const STORAGE_KEY = 'mishkah.sync.v1';
 const QUEUE_KEY = 'mishkah.sync.queue.v1';
 const DEVICE_ID = `mishkah-${Math.random().toString(36).slice(2, 10)}`;
 const SYNC_API_URL = String(Constants.expoConfig?.extra?.syncApiUrl ?? '').trim();
+
+export function isCrossDeviceSyncConfigured(): boolean {
+  return Boolean(SYNC_API_URL || isSupabaseSyncConfigured());
+}
 
 export function getDeviceId(): string {
   return DEVICE_ID;
@@ -62,6 +75,12 @@ export async function readSyncState(): Promise<SyncState> {
     },
     streak: Number(parsed.streak ?? 0),
     featuresUnlocked: Array.isArray(parsed.featuresUnlocked) ? parsed.featuresUnlocked : [],
+    furqanMemorizedCount: Number(parsed.furqanMemorizedCount ?? 0),
+    furqanMemorizedMilestones: Number(parsed.furqanMemorizedMilestones ?? 0),
+    dailyHighlightDate: typeof parsed.dailyHighlightDate === 'string' ? parsed.dailyHighlightDate : null,
+    dailyHighlightGlobalAyah: Number.isInteger(parsed.dailyHighlightGlobalAyah)
+      ? parsed.dailyHighlightGlobalAyah
+      : null,
   };
 }
 
@@ -108,14 +127,63 @@ export async function flushSyncQueue(idToken: string): Promise<SyncState> {
     return readSyncState();
   }
 
-  if (!SYNC_API_URL) {
+  if (!SYNC_API_URL && !isSupabaseSyncConfigured()) {
     throw new Error('Cross-device sync is not configured for this build. Your updates remain queued on this device.');
   }
-  if (!idToken) {
+  if (!isSupabaseSyncConfigured() && !idToken) {
     throw new Error('Sign in again before syncing your queued updates.');
   }
 
   await writeSyncState({ status: 'syncing', queuedCount: queued.length });
+
+  if (isSupabaseSyncConfigured()) {
+    try {
+      const records = new Map<string, Record<string, unknown>>();
+      for (const event of queued) {
+        if (event.type !== 'streak-sync' && event.type !== 'account-snapshot') {
+          throw new Error(`Unsupported queued sync event: ${event.type}`);
+        }
+        if (typeof event.payload !== 'object' || event.payload === null || Array.isArray(event.payload)) {
+          throw new Error(`Invalid queued sync payload for ${event.type}.`);
+        }
+        const payload = event.payload as Record<string, unknown>;
+        if (
+          typeof payload.streak !== 'number' ||
+          !Number.isInteger(payload.streak) ||
+          payload.streak < 0
+        ) {
+          throw new Error(`Invalid streak value in queued ${event.type}.`);
+        }
+        records.set('mishkah.engagement', {
+          currentStreak: payload.streak,
+          featuresUnlocked: Array.isArray(payload.featuresUnlocked)
+            ? payload.featuresUnlocked.filter((feature): feature is string => typeof feature === 'string')
+            : computeUnlockedFeatures(payload.streak),
+          source: 'mishkah',
+        });
+      }
+
+      for (const [recordKey, payload] of records) {
+        await upsertSharedRecord(recordKey, payload);
+      }
+
+      const queuedIds = new Set(queued.map((event) => event.id));
+      const remaining = (await readQueue()).filter((event) => !queuedIds.has(event.id));
+      const syncedAt = Date.now();
+      const current = await readSyncState();
+      await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(remaining));
+      await writeSyncState({
+        status: remaining.length ? 'queued' : 'synced',
+        queuedCount: remaining.length,
+        lastSyncedAt: syncedAt,
+        linkedAccount: { ...current.linkedAccount, lastSyncedAt: syncedAt },
+      });
+      return readSyncState();
+    } catch (error) {
+      await writeSyncState({ status: 'queued', queuedCount: (await readQueue()).length });
+      throw error;
+    }
+  }
 
   let response: Response;
   try {
@@ -191,6 +259,68 @@ function parseFurqanProgress(value: unknown): FurqanProgressSnapshot | null {
 }
 
 export async function refreshFurqanProgress(idToken: string): Promise<SyncState | null> {
+  if (isSupabaseSyncConfigured()) {
+    const records = await readSharedRecords();
+    const record = records.find((item) => item.record_key === 'furqan.progression');
+    const snapshot = record ? parseFurqanProgress(record.payload) : null;
+    if (record && !snapshot) throw new Error('Supabase returned an invalid Furqan streak value.');
+    const memorizedRecords = records.filter((item) => /^furqan\.memorized:\d{1,3}:\d{1,3}$/.test(item.record_key));
+    for (const item of memorizedRecords) {
+      const [, surahKey, ayahKey] = item.record_key.split(':');
+      const surah = Number(surahKey);
+      const ayah = Number(ayahKey);
+      const payload = item.payload;
+      if (
+        surah < 1 || surah > 114 ||
+        ayah < 1 || ayah > 286 ||
+        payload.surah !== surah ||
+        payload.ayah !== ayah ||
+        typeof payload.memorized !== 'boolean' ||
+        typeof payload.playCount !== 'number' ||
+        !Number.isInteger(payload.playCount) ||
+        payload.playCount < 0
+      ) {
+        throw new Error(`Supabase returned an invalid Furqan memorization record (${item.record_key}).`);
+      }
+    }
+    const today = new Date();
+    const todayKey = [
+      today.getFullYear(),
+      String(today.getMonth() + 1).padStart(2, '0'),
+      String(today.getDate()).padStart(2, '0'),
+    ].join('-');
+    const highlight = records.find((item) => item.record_key === `quran.daily-highlight:${todayKey}`);
+    const highlightGlobalAyah = highlight?.payload.globalAyah;
+    const dailyHighlightGlobalAyah =
+      typeof highlightGlobalAyah === 'number' &&
+      Number.isInteger(highlightGlobalAyah) &&
+      highlightGlobalAyah >= 1 &&
+      highlightGlobalAyah <= 6236
+        ? highlightGlobalAyah
+        : null;
+    if (
+      highlight &&
+      dailyHighlightGlobalAyah === null
+    ) {
+      throw new Error('Supabase returned an invalid daily Quran highlight.');
+    }
+    const current = await readSyncState();
+    await writeSyncState({
+      ...(snapshot
+        ? {
+            streak: snapshot.currentStreak,
+            featuresUnlocked: computeUnlockedFeatures(snapshot.currentStreak),
+          }
+        : {}),
+      furqanMemorizedCount: memorizedRecords.length,
+      furqanMemorizedMilestones: memorizedRecords.filter((item) => item.payload.memorized === true).length,
+      dailyHighlightDate: highlight ? todayKey : null,
+      dailyHighlightGlobalAyah,
+      status: current.queuedCount > 0 ? 'queued' : current.status,
+    });
+    return readSyncState();
+  }
+
   if (!SYNC_API_URL || !idToken) return null;
 
   const separator = SYNC_API_URL.includes('?') ? '&' : '?';

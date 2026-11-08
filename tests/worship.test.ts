@@ -2,7 +2,14 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { EVENING_ADHKAR, HISN_AL_MUSLIM_DUAS, MORNING_ADHKAR, searchDuas } from '../src/domain/adhkar';
 import { getDailyHadith, NAWAWI_FORTY, searchHadiths } from '../src/domain/hadith';
-import { makeCustomDhikr, nextTasbeehCount, TASBEEH_PRESETS } from '../src/domain/tasbeeh';
+import {
+  incrementDhikrCount,
+  makeCustomDhikr,
+  nextTasbeehCount,
+  POST_SALAH_COUNTERS,
+  resetPostSalahCounts,
+  TASBEEH_PRESETS,
+} from '../src/domain/tasbeeh';
 import { computeUnlockedFeatures } from '../src/domain/streakRewards';
 import { getContextualAnswer } from '../src/domain/assistant';
 
@@ -61,8 +68,31 @@ describe('offline worship library', () => {
     assert.equal(makeCustomDhikr('', 100, 1), null);
   });
 
+  it('keeps the five post-salah counters independent and preserves Astaghfirullah on prayer reset', () => {
+    assert.deepEqual(POST_SALAH_COUNTERS.slice(0, 3).map((counter) => counter.target), [33, 33, 34]);
+    assert.equal(incrementDhikrCount(33, 33), 33);
+    assert.equal(incrementDhikrCount(1, null), 2);
+    assert.deepEqual(
+      resetPostSalahCounts({
+        'post-salah-subhanallah': 33,
+        'post-salah-alhamdulillah': 33,
+        'post-salah-allahu-akbar': 34,
+        'post-salah-astaghfirullah': 18,
+        'post-salah-la-ilaha-illallah': 5,
+      }),
+      {
+        'post-salah-subhanallah': 0,
+        'post-salah-alhamdulillah': 0,
+        'post-salah-allahu-akbar': 0,
+        'post-salah-astaghfirullah': 18,
+        'post-salah-la-ilaha-illallah': 0,
+      },
+    );
+  });
+
   it('answers worship questions from the offline catalog and routes reciter help', () => {
     assert.match(getContextualAnswer('dua for travel').answer, /journey|return/i);
     assert.match(getContextualAnswer('open reciter library').answer, /21-day Furqan reading streak/);
+    assert.match(getContextualAnswer('qibla direction').answer, /Guidance → Qibla/);
   });
 });

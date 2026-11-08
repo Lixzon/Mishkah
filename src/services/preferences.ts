@@ -1,9 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DEFAULT_CITY_IDS, MAX_PINNED_CITIES, getCity } from '../domain/cities';
-import { isValidJumuahTime, type CalculationMethod } from '../domain/prayer';
+import { isValidJumuahTime, type CalculationMethod, type PrayerName } from '../domain/prayer';
 import type { CustomDhikr } from '../domain/tasbeeh';
 
 const PREFERENCES_KEY = 'mishkah.preferences.v1';
+const OBLIGATORY_PRAYERS = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'] as const;
 
 export type AppPreferences = {
   pinnedCityIds: string[];
@@ -11,6 +12,7 @@ export type AppPreferences = {
   jumuahTimesByCity: Record<string, string>;
   theme: 'light' | 'dark' | 'midnight';
   calculationMethod: CalculationMethod;
+  prayerAlarms: Partial<Record<Exclude<PrayerName, 'Sunrise'>, boolean>>;
   fajrAlarm: boolean;
   iftarAlarm: boolean;
   alarmLeadMinutes: 45 | 50 | 60;
@@ -19,6 +21,10 @@ export type AppPreferences = {
   customDhikr: CustomDhikr[];
   tasbeehDate: string;
   tasbeehCounts: Record<string, number>;
+  tasbeehHaptics: boolean;
+  autoResetTasbeehAfterPrayer: boolean;
+  prayerChecklistDate: string;
+  completedPrayers: string[];
   adhkarDate: string;
   adhkarCounts: Record<string, number>;
 };
@@ -29,6 +35,13 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   jumuahTimesByCity: {},
   theme: 'light',
   calculationMethod: 'MWL',
+  prayerAlarms: {
+    Fajr: false,
+    Dhuhr: false,
+    Asr: false,
+    Maghrib: false,
+    Isha: false,
+  },
   fajrAlarm: false,
   iftarAlarm: false,
   alarmLeadMinutes: 45,
@@ -37,6 +50,10 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   customDhikr: [],
   tasbeehDate: '',
   tasbeehCounts: {},
+  tasbeehHaptics: true,
+  autoResetTasbeehAfterPrayer: false,
+  prayerChecklistDate: '',
+  completedPrayers: [],
   adhkarDate: '',
   adhkarCounts: {},
 };
@@ -109,6 +126,7 @@ function normalizePreferences(value: unknown): AppPreferences {
     calculationMethod: isCalculationMethod(input.calculationMethod)
       ? input.calculationMethod
       : DEFAULT_PREFERENCES.calculationMethod,
+    prayerAlarms: normalizePrayerAlarms(input.prayerAlarms),
     fajrAlarm: input.fajrAlarm === true,
     iftarAlarm: input.iftarAlarm === true,
     alarmLeadMinutes:
@@ -122,8 +140,31 @@ function normalizePreferences(value: unknown): AppPreferences {
     customDhikr: normalizeCustomDhikr(input.customDhikr),
     tasbeehDate: typeof input.tasbeehDate === 'string' ? input.tasbeehDate : '',
     tasbeehCounts: normalizeCounts(input.tasbeehCounts),
+    tasbeehHaptics: input.tasbeehHaptics !== false,
+    autoResetTasbeehAfterPrayer: input.autoResetTasbeehAfterPrayer === true,
+    prayerChecklistDate: typeof input.prayerChecklistDate === 'string' ? input.prayerChecklistDate : '',
+    completedPrayers: Array.isArray(input.completedPrayers)
+      ? [...new Set(input.completedPrayers.filter(
+          (prayer): prayer is typeof OBLIGATORY_PRAYERS[number] =>
+            typeof prayer === 'string' && OBLIGATORY_PRAYERS.includes(prayer as typeof OBLIGATORY_PRAYERS[number]),
+        ))]
+      : [],
     adhkarDate: typeof input.adhkarDate === 'string' ? input.adhkarDate : '',
     adhkarCounts: normalizeCounts(input.adhkarCounts),
+  };
+}
+
+function normalizePrayerAlarms(value: unknown): AppPreferences['prayerAlarms'] {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return { ...DEFAULT_PREFERENCES.prayerAlarms };
+  }
+  const record = value as Record<string, unknown>;
+  return {
+    Fajr: record.Fajr === true,
+    Dhuhr: record.Dhuhr === true,
+    Asr: record.Asr === true,
+    Maghrib: record.Maghrib === true,
+    Isha: record.Isha === true,
   };
 }
 

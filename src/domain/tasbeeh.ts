@@ -74,6 +74,38 @@ export const TASBEEH_PRESETS: readonly TasbeehPreset[] = [
 
 export const CUSTOM_DHIKR_TARGETS = [33, 100] as const;
 
+export interface PostSalahCounter {
+  id: string;
+  label: string;
+  arabic: string;
+  target: number | null;
+}
+
+export const POST_SALAH_COUNTERS: readonly PostSalahCounter[] = [
+  { id: 'post-salah-subhanallah', label: 'Subhanallah', arabic: 'سُبْحَانَ اللَّهِ', target: 33 },
+  { id: 'post-salah-alhamdulillah', label: 'Alhamdulillah', arabic: 'الْحَمْدُ لِلَّهِ', target: 33 },
+  { id: 'post-salah-allahu-akbar', label: 'Allahu Akbar', arabic: 'اللَّهُ أَكْبَرُ', target: 34 },
+  { id: 'post-salah-astaghfirullah', label: 'Astaghfirullah', arabic: 'أَسْتَغْفِرُ اللَّهَ', target: null },
+  { id: 'post-salah-la-ilaha-illallah', label: 'La ilaha illallah', arabic: 'لَا إِلَٰهَ إِلَّا اللَّهُ', target: null },
+];
+
+export function incrementDhikrCount(count: number, target: number | null): number {
+  const current = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+  return target === null ? current + 1 : Math.min(current + 1, target);
+}
+
+export function resetPostSalahCounts(
+  counts: Readonly<Record<string, number>>,
+  preserveAstaghfirullah = true,
+): Record<string, number> {
+  const next = { ...counts };
+  for (const counter of POST_SALAH_COUNTERS) {
+    if (preserveAstaghfirullah && counter.id === 'post-salah-astaghfirullah') continue;
+    next[counter.id] = 0;
+  }
+  return next;
+}
+
 export interface CustomDhikr {
   id: string;
   label: string;

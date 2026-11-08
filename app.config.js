@@ -19,7 +19,15 @@ module.exports = ({ config }) => {
     slug: config.slug ?? 'mishkah',
     scheme: 'mishkah',
     platforms: ['ios', 'android', 'web'],
-    plugins: [...(config.plugins ?? []), 'expo-audio', 'expo-asset', 'expo-web-browser', 'expo-sharing'],
+    plugins: [
+      ...(config.plugins ?? []),
+      'expo-audio',
+      'expo-asset',
+      'expo-web-browser',
+      'expo-sharing',
+      ['expo-location', { locationWhenInUsePermission: 'Allow Mishkah to use your location to point toward the Qibla.' }],
+      ['expo-sensors', { motionPermission: 'Allow Mishkah to use the compass for Qibla direction.' }],
+    ],
     web: {
       bundler: 'metro',
       output: 'single',
@@ -38,6 +46,9 @@ module.exports = ({ config }) => {
       googleIosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ?? '',
       googleAndroidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ?? '',
       syncApiUrl: process.env.EXPO_PUBLIC_SYNC_API_URL ?? '',
+      supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL ?? '',
+      supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '',
+      furqanBaseUrl: process.env.EXPO_PUBLIC_FURQAN_URL ?? 'https://furqan-quran-app.vercel.app',
     },
   };
 };

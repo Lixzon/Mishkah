@@ -6,6 +6,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
+  Linking,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -14,6 +16,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { ARCHIVE_CATEGORIES, searchIslamicArchive } from '../domain/archives';
 import type { AdhkarEntry, DuaEntry } from '../domain/adhkar';
 import { EVENING_ADHKAR, HISN_AL_MUSLIM_DUAS, MORNING_ADHKAR, searchDuas } from '../domain/adhkar';
 import {
@@ -25,15 +28,17 @@ import {
 } from '../domain/hadith';
 import {
   CUSTOM_DHIKR_TARGETS,
+  incrementDhikrCount,
   makeCustomDhikr,
   nextTasbeehCount,
+  POST_SALAH_COUNTERS,
   TASBEEH_PRESETS,
   type TasbeehPreset,
 } from '../domain/tasbeeh';
 import type { AppPreferences } from '../services/preferences';
 import { getReciterAudioUrl, QURAN_RECITERS } from '../domain/reciters';
 
-export type WorshipTab = 'Hadith' | 'Tasbeeh' | 'Adhkar' | 'Duas' | 'Reciters';
+export type WorshipTab = 'Hadith' | 'Tasbeeh' | 'Adhkar' | 'Duas' | 'Reciters' | 'Archives';
 type Period = 'morning' | 'evening';
 
 export interface WorshipPalette {
@@ -59,7 +64,7 @@ interface WorshipHubProps {
   onNotice: (message: string) => void;
 }
 
-const TABS: readonly WorshipTab[] = ['Hadith', 'Tasbeeh', 'Adhkar', 'Duas', 'Reciters'];
+const TABS: readonly WorshipTab[] = ['Hadith', 'Tasbeeh', 'Adhkar', 'Duas', 'Reciters', 'Archives'];
 const DUA_CATEGORIES: readonly (DuaEntry['category'] | 'all')[] = [
   'all',
   'travel',
@@ -108,10 +113,13 @@ export function WorshipHub({ preferences, palette, date, initialTab = 'Hadith', 
   const [period, setPeriod] = useState<Period>('morning');
   const [duaQuery, setDuaQuery] = useState('');
   const [duaCategory, setDuaCategory] = useState<DuaEntry['category'] | 'all'>('all');
+  const [archiveQuery, setArchiveQuery] = useState('');
+  const [archiveCategory, setArchiveCategory] = useState<(typeof ARCHIVE_CATEGORIES)[number]>('All');
   const [customName, setCustomName] = useState('');
   const [customTarget, setCustomTarget] = useState<(typeof CUSTOM_DHIKR_TARGETS)[number]>(33);
   const [selectedPresetId, setSelectedPresetId] = useState(TASBEEH_PRESETS[0].id);
   const [selectedReciterId, setSelectedReciterId] = useState(QURAN_RECITERS[0].id);
+  const [resetConfirmationVisible, setResetConfirmationVisible] = useState(false);
   const cardRef = useRef<ViewShotRef | null>(null);
   const progressValue = useRef(new Animated.Value(0)).current;
   const audioPlayer = useAudioPlayer(null);
@@ -143,6 +151,15 @@ export function WorshipHub({ preferences, palette, date, initialTab = 'Hadith', 
   const filteredHadiths = searchHadiths(hadithQuery, hadithCollection)
     .filter((entry) => extendedHadithUnlocked || entry.collection === 'nawawi40');
   const filteredDuas = searchDuas(duaQuery, duaCategory);
+  const filteredArchive = searchIslamicArchive(archiveQuery, archiveCategory);
+
+  const openArchiveSource = async (url: string) => {
+    try {
+      await Linking.openURL(url);
+    } catch (error) {
+      onNotice(`Source link could not be opened: ${error instanceof Error ? error.message : 'unknown error'}`);
+    }
+  };
 
   useEffect(() => {
     progressValue.setValue(0);
@@ -159,6 +176,7 @@ export function WorshipHub({ preferences, palette, date, initialTab = 'Hadith', 
   }, [initialTab]);
 
   const selectionHaptic = () => {
+    if (!preferences.tasbeehHaptics) return;
     const feedback = Platform.OS === 'android'
       ? Haptics.performAndroidHapticsAsync(Haptics.AndroidHaptics.Clock_Tick)
       : Haptics.selectionAsync();
@@ -176,6 +194,42 @@ export function WorshipHub({ preferences, palette, date, initialTab = 'Hadith', 
     });
   };
 
+  const updatePostSalahCounter = (id: string, count: number) => {
+    onPreferencesChange((current) => {
+      const counts = current.tasbeehDate === date ? current.tasbeehCounts : {};
+      return {
+        ...current,
+        tasbeehDate: date,
+        tasbeehCounts: { ...counts, [id]: count },
+      };
+    });
+  };
+
+  const incrementPostSalahCounter = (id: string, target: number | null) => {
+    const count = currentTasbeehCounts[id] ?? 0;
+    const nextCount = incrementDhikrCount(count, target);
+    if (nextCount === count) return;
+    updatePostSalahCounter(id, nextCount);
+    selectionHaptic();
+    if (target !== null && nextCount === target) {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+      onNotice(`${POST_SALAH_COUNTERS.find((counter) => counter.id === id)?.label ?? 'Dhikr'} complete.`);
+    }
+  };
+
+  const resetAllTasbeeh = () => {
+    onPreferencesChange((current) => ({
+      ...current,
+      tasbeehDate: date,
+      tasbeehCounts: Object.fromEntries(
+        [...new Set([...Object.keys(current.tasbeehCounts), ...POST_SALAH_COUNTERS.map((counter) => counter.id)])]
+          .map((id) => [id, 0]),
+      ),
+    }));
+    setResetConfirmationVisible(false);
+    onNotice('All Tasbeeh counts were reset.');
+  };
+
   const incrementTasbeeh = () => {
     if (!selectedPreset) return;
     const nextCount = nextTasbeehCount(tasbeehCount, selectedPreset.target);
@@ -183,7 +237,9 @@ export function WorshipHub({ preferences, palette, date, initialTab = 'Hadith', 
     updateTasbeeh(selectedPreset, nextCount);
     selectionHaptic();
     if (nextCount === selectedPreset.target) {
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+      if (preferences.tasbeehHaptics) {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+      }
       onNotice(`${selectedPreset.label} complete.`);
     }
   };
@@ -209,7 +265,12 @@ export function WorshipHub({ preferences, palette, date, initialTab = 'Hadith', 
       return { ...current, adhkarDate: date, adhkarCounts: { ...counts, [entry.id]: nextCount } };
     });
     selectionHaptic();
-    if (nextCount === entry.count) onNotice(`${entry.title} complete.`);
+    if (nextCount === entry.count) {
+      if (preferences.tasbeehHaptics) {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+      }
+      onNotice(`${entry.title} complete.`);
+    }
   };
 
   const toggleReciter = (reciterId: string) => {
@@ -248,6 +309,7 @@ export function WorshipHub({ preferences, palette, date, initialTab = 'Hadith', 
   };
 
   return (
+    <>
     <View>
       <View style={styles.introBlock}>
         <Text style={styles.eyebrow}>WORSHIP & REFLECTION</Text>
@@ -319,6 +381,69 @@ export function WorshipHub({ preferences, palette, date, initialTab = 'Hadith', 
 
       {tab === 'Tasbeeh' ? (
         <>
+          <SectionLabel title="Post-salah remembrance" detail="Tap a counter to count each repetition" styles={styles} />
+          <View style={styles.counterTopGrid}>
+            {POST_SALAH_COUNTERS.slice(0, 3).map((counter) => {
+              const count = currentTasbeehCounts[counter.id] ?? 0;
+              return (
+                <View key={counter.id} style={styles.postSalahCounterCard}>
+                  <Text style={styles.postSalahLabel} numberOfLines={1}>{counter.label}</Text>
+                  <Text style={styles.postSalahArabic}>{counter.arabic}</Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Increment ${counter.label}, ${count} of ${counter.target}`}
+                    onPress={() => incrementPostSalahCounter(counter.id, counter.target)}
+                    style={({ pressed }) => [styles.postSalahCountButton, pressed && styles.counterPressed]}
+                  >
+                    <Text style={styles.postSalahCount}>{count}</Text>
+                    <Text style={styles.postSalahTarget}>/ {counter.target}</Text>
+                  </Pressable>
+                  <Pressable accessibilityRole="button" onPress={() => updatePostSalahCounter(counter.id, 0)} style={styles.smallResetButton}>
+                    <Text style={styles.smallResetText}>Reset</Text>
+                  </Pressable>
+                </View>
+              );
+            })}
+          </View>
+          <View style={styles.counterBottomGrid}>
+            {POST_SALAH_COUNTERS.slice(3).map((counter) => {
+              const count = currentTasbeehCounts[counter.id] ?? 0;
+              return (
+                <View key={counter.id} style={styles.postSalahCounterCard}>
+                  <Text style={styles.postSalahLabel}>{counter.label}</Text>
+                  <Text style={styles.postSalahArabic}>{counter.arabic}</Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Increment ${counter.label}, ${count}`}
+                    onPress={() => incrementPostSalahCounter(counter.id, counter.target)}
+                    style={({ pressed }) => [styles.postSalahCountButton, pressed && styles.counterPressed]}
+                  >
+                    <Text style={styles.postSalahCount}>{count}</Text>
+                    <Text style={styles.postSalahTarget}>/ ∞</Text>
+                  </Pressable>
+                  <Pressable accessibilityRole="button" onPress={() => updatePostSalahCounter(counter.id, 0)} style={styles.smallResetButton}>
+                    <Text style={styles.smallResetText}>Reset</Text>
+                  </Pressable>
+                </View>
+              );
+            })}
+          </View>
+          <View style={styles.tasbeehSettings}>
+            <ToggleSetting
+              label="Haptic feedback"
+              enabled={preferences.tasbeehHaptics}
+              styles={styles}
+              onChange={(enabled) => onPreferencesChange((current) => ({ ...current, tasbeehHaptics: enabled }))}
+            />
+            <ToggleSetting
+              label="Auto-reset after salah"
+              enabled={preferences.autoResetTasbeehAfterPrayer}
+              styles={styles}
+              onChange={(enabled) => onPreferencesChange((current) => ({ ...current, autoResetTasbeehAfterPrayer: enabled }))}
+            />
+          </View>
+          <ActionRow label="Reset all Tasbeeh counts" icon="↺" styles={styles} onPress={() => setResetConfirmationVisible(true)} />
+
           <Text style={styles.sectionTitle}>Choose a remembrance</Text>
           <View style={styles.chipRow}>
             {allPresets.map((preset) => (
@@ -471,7 +596,100 @@ export function WorshipHub({ preferences, palette, date, initialTab = 'Hadith', 
           )}
         </>
       ) : null}
+
+      {tab === 'Archives' ? (
+        <>
+          <Text style={styles.bodyText}>
+            Short, source-linked introductions to Qur’anic stories, companions, signs, Adab, and food guidance. Summaries are educational, not fatwas.
+          </Text>
+          <TextInput
+            accessibilityLabel="Search Islamic archives"
+            onChangeText={setArchiveQuery}
+            placeholder="Search stories, people, or topics"
+            placeholderTextColor={palette.muted}
+            style={styles.searchInput}
+            value={archiveQuery}
+          />
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+            {ARCHIVE_CATEGORIES.map((category) => (
+              <ChoiceChip
+                key={category}
+                label={category}
+                selected={archiveCategory === category}
+                styles={styles}
+                onPress={() => setArchiveCategory(category)}
+              />
+            ))}
+          </ScrollView>
+          {filteredArchive.map((entry) => (
+            <View key={entry.id} style={styles.archiveCard}>
+              <Text style={styles.cardEyebrow}>{entry.category.toUpperCase()}</Text>
+              <Text style={styles.cardTitle}>{entry.title}</Text>
+              <Text style={styles.bodyText}>{entry.summary}</Text>
+              <View style={styles.archiveSources}>
+                {entry.sources.map((source) => (
+                  <Pressable
+                    accessibilityRole="link"
+                    key={source.url}
+                    onPress={() => void openArchiveSource(source.url)}
+                  >
+                    <Text style={styles.archiveSourceLink}>Read {source.label} ↗</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          ))}
+          {!filteredArchive.length ? <EmptyState text="No archive entries match this search." styles={styles} /> : null}
+          <Text style={styles.cardDisclosure}>
+            Islamic interpretation and end-times scholarship vary. Follow trusted scholars for detailed explanations. Health and food notes do not replace qualified medical advice.
+          </Text>
+        </>
+      ) : null}
     </View>
+    <Modal
+      animationType="fade"
+      onRequestClose={() => setResetConfirmationVisible(false)}
+      transparent
+      visible={resetConfirmationVisible}
+    >
+      <View style={styles.resetBackdrop}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Cancel reset" onPress={() => setResetConfirmationVisible(false)} style={StyleSheet.absoluteFill} />
+        <View style={styles.resetDialog}>
+          <Text style={styles.resetTitle}>Reset all Tasbeeh counts?</Text>
+          <Text style={styles.bodyText}>This clears the saved repetition counts. This action cannot be undone.</Text>
+          <View style={styles.counterActions}>
+            <Pressable accessibilityRole="button" onPress={() => setResetConfirmationVisible(false)} style={styles.secondaryButton}>
+              <Text style={styles.secondaryButtonText}>Cancel</Text>
+            </Pressable>
+            <Pressable accessibilityRole="button" onPress={resetAllTasbeeh} style={styles.confirmResetButton}>
+              <Text style={styles.confirmResetText}>Reset counts</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+    </>
+  );
+}
+
+function ToggleSetting({ label, enabled, styles, onChange }: {
+  label: string;
+  enabled: boolean;
+  styles: ReturnType<typeof createStyles>;
+  onChange: (enabled: boolean) => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="switch"
+      accessibilityState={{ checked: enabled }}
+      onPress={() => onChange(!enabled)}
+      style={styles.toggleSetting}
+    >
+      <Text style={styles.toggleLabel}>{label}</Text>
+      <View style={[styles.toggleTrack, enabled && styles.toggleTrackActive]}>
+        <View style={[styles.toggleThumb, enabled && styles.toggleThumbActive]} />
+      </View>
+    </Pressable>
   );
 }
 
@@ -551,6 +769,9 @@ function createStyles(colors: WorshipPalette) {
     cardTitle: { color: colors.accent, fontSize: 19, fontWeight: '600', marginTop: 12 },
     cardSummary: { color: colors.ink, fontSize: 13, lineHeight: 20, marginTop: 10 },
     cardReference: { color: colors.muted, fontSize: 10, lineHeight: 16, marginTop: 11 },
+    archiveCard: { marginTop: 10, padding: 14, borderRadius: 15, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line },
+    archiveSources: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 10 },
+    archiveSourceLink: { color: colors.accent, fontSize: 11, fontWeight: '700' },
     cardDisclosure: { color: colors.muted, fontSize: 9, lineHeight: 14, marginTop: 5 },
     actionRow: { minHeight: 45, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.line },
     actionIcon: { color: colors.accent, fontSize: 17, width: 28 },
@@ -573,6 +794,28 @@ function createStyles(colors: WorshipPalette) {
     listSubtitle: { color: colors.muted, fontSize: 9, marginTop: 4 },
     listArrow: { color: colors.gold, fontSize: 18, paddingHorizontal: 5 },
     emptyState: { color: colors.muted, fontSize: 12, lineHeight: 18, paddingVertical: 18 },
+    counterTopGrid: { flexDirection: 'row', gap: 7, marginTop: 10 },
+    counterBottomGrid: { flexDirection: 'row', gap: 8, marginTop: 8 },
+    postSalahCounterCard: { flex: 1, minWidth: 0, alignItems: 'center', paddingHorizontal: 7, paddingVertical: 12, borderRadius: 16, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
+    postSalahLabel: { color: colors.ink, fontSize: 10, fontWeight: '700', textAlign: 'center' },
+    postSalahArabic: { color: colors.accent, fontSize: 15, marginTop: 8 },
+    postSalahCountButton: { width: '100%', minHeight: 50, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: colors.surfaceRaised, marginTop: 9 },
+    postSalahCount: { color: colors.accent, fontSize: 19, fontWeight: '700', fontVariant: ['tabular-nums'] },
+    postSalahTarget: { color: colors.muted, fontSize: 9, marginLeft: 3 },
+    smallResetButton: { minHeight: 29, paddingHorizontal: 8, alignItems: 'center', justifyContent: 'center', marginTop: 5 },
+    smallResetText: { color: colors.muted, fontSize: 9, fontWeight: '600' },
+    tasbeehSettings: { backgroundColor: colors.surface, borderRadius: 15, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 12, marginTop: 12 },
+    toggleSetting: { minHeight: 45, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.line },
+    toggleLabel: { color: colors.ink, fontSize: 11, fontWeight: '600' },
+    toggleTrack: { width: 38, height: 22, borderRadius: 11, justifyContent: 'center', paddingHorizontal: 2, backgroundColor: colors.surfaceRaised },
+    toggleTrackActive: { backgroundColor: colors.accent },
+    toggleThumb: { width: 18, height: 18, borderRadius: 9, backgroundColor: colors.surface },
+    toggleThumbActive: { alignSelf: 'flex-end' },
+    resetBackdrop: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 22, backgroundColor: 'rgba(0,0,0,0.42)' },
+    resetDialog: { width: '100%', maxWidth: 360, padding: 20, borderRadius: 20, backgroundColor: colors.surface },
+    resetTitle: { color: colors.ink, fontSize: 16, fontWeight: '700' },
+    confirmResetButton: { minHeight: 35, minWidth: 100, paddingHorizontal: 12, borderRadius: 18, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
+    confirmResetText: { color: colors.accentInk, fontSize: 10, fontWeight: '700' },
     tasbeehPanel: { alignItems: 'center', backgroundColor: colors.surface, borderRadius: 18, borderWidth: 1, borderColor: colors.line, padding: 20, marginTop: 14 },
     arabicText: { color: colors.ink, fontSize: 23, lineHeight: 42, textAlign: 'right', writingDirection: 'rtl', marginTop: 12 },
     tasbeehPhrase: { color: colors.accent, fontSize: 14, fontWeight: '600', textAlign: 'center', marginTop: 8 },

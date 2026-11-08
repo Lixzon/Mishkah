@@ -7,6 +7,7 @@ import {
   getPrayerTimesForDate,
   prayerTimeInstant,
   type CalculationMethod,
+  type PrayerName,
 } from '../domain/prayer';
 
 const SCHEDULE_DAYS = 14;
@@ -15,6 +16,7 @@ const ALARM_TAG = 'mishkahAlarm';
 export async function schedulePrayerReminders(
   city: City,
   options: {
+    prayerAlarms: Partial<Record<Exclude<PrayerName, 'Sunrise'>, boolean>>;
     fajrEnabled: boolean;
     iftarEnabled: boolean;
     fajrLeadMinutes: number;
@@ -30,7 +32,8 @@ export async function schedulePrayerReminders(
   if (options.requestPermission && !permission.granted) {
     permission = await Notifications.requestPermissionsAsync();
   }
-  if ((options.fajrEnabled || options.iftarEnabled) && !permission.granted) {
+  const hasPrayerAlarms = Object.values(options.prayerAlarms).some(Boolean);
+  if ((hasPrayerAlarms || options.fajrEnabled || options.iftarEnabled) && !permission.granted) {
     throw new Error('Notification permission is needed to schedule prayer reminders.');
   }
 
@@ -41,7 +44,7 @@ export async function schedulePrayerReminders(
       .map((request) => Notifications.cancelScheduledNotificationAsync(request.identifier)),
   );
 
-  if (!options.fajrEnabled && !options.iftarEnabled) {
+  if (!hasPrayerAlarms && !options.fajrEnabled && !options.iftarEnabled) {
     return 0;
   }
 
@@ -50,6 +53,22 @@ export async function schedulePrayerReminders(
   for (let offset = 0; offset < SCHEDULE_DAYS; offset += 1) {
     const localDate = addCalendarDays(today, offset);
     const times = getPrayerTimesForDate(city, localDate, options.method);
+
+    for (const prayer of ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'] as const) {
+      if (!options.prayerAlarms[prayer]) continue;
+      const triggerDate = prayerTimeInstant(city, localDate, times[prayer]);
+      if (triggerDate.getTime() <= Date.now()) continue;
+      notifications.push(
+        Notifications.scheduleNotificationAsync({
+          content: {
+            title: `${prayer} prayer time`,
+            body: `It is time for ${prayer} in ${city.name}.\nby LIXZON`,
+            data: { [ALARM_TAG]: true, kind: 'prayer', prayer, cityId: city.id },
+          },
+          trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: triggerDate },
+        }),
+      );
+    }
 
     if (options.fajrEnabled) {
       const triggerDate = prayerTimeInstant(city, localDate, times.Fajr - options.fajrLeadMinutes);
