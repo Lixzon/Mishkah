@@ -3,6 +3,7 @@ import Constants from 'expo-constants';
 import * as Crypto from 'expo-crypto';
 import * as SplashScreen from 'expo-splash-screen';
 import * as WebBrowser from 'expo-web-browser';
+import type { Session } from '@supabase/supabase-js';
 import { useIdTokenAuthRequest } from 'expo-auth-session/providers/google';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -76,7 +77,9 @@ import { clearAuthSession, isAuthSessionExpired, loadAuthSession, saveAuthSessio
 import {
   connectSupabaseGoogleAccount,
   disconnectSupabaseAccount,
+  getSupabaseClient,
   isSupabaseSyncConfigured,
+  startSupabaseGoogleSignIn,
   subscribeToSharedRecords,
 } from './src/services/cloudSync';
 import {
@@ -259,6 +262,7 @@ export default function App() {
   const [profileModalVisible, setProfileModalVisible] = useState(false);
   const [streakModalVisible, setStreakModalVisible] = useState(false);
   const [prayerModalVisible, setPrayerModalVisible] = useState(false);
+  const [siblingSyncVisible, setSiblingSyncVisible] = useState(false);
   const [universalSearchVisible, setUniversalSearchVisible] = useState(false);
   const [universalSearchQuery, setUniversalSearchQuery] = useState('');
   const [universalSearchStatus, setUniversalSearchStatus] = useState('');
@@ -279,6 +283,8 @@ export default function App() {
   const [authSession, setAuthSession] = useState<Awaited<ReturnType<typeof loadAuthSession>>>(null);
   const [authLoading, setAuthLoading] = useState(false);
   const [authMessage, setAuthMessage] = useState('');
+  const connectedSupabaseUserId = useRef<string | null>(null);
+  const resumeSiblingSyncChoice = useRef(false);
   const [dailyVerse, setDailyVerse] = useState<DailyVerse | null>(null);
   const [dailyVerseError, setDailyVerseError] = useState('');
   const [refreshingVerse, setRefreshingVerse] = useState(false);
@@ -293,6 +299,7 @@ export default function App() {
     android: googleAndroidClientId,
     default: googleWebClientId,
   }) ?? '';
+  const supabaseConfigured = isSupabaseSyncConfigured();
 
   const [request, response, promptAsync] = useIdTokenAuthRequest(
     {
@@ -350,6 +357,79 @@ export default function App() {
       active = false;
       uninstallBatteryGovernor();
       uninstallExceptionRecorder?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !supabaseConfigured) return;
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+    let active = true;
+    const applySession = (session: Session | null) => {
+      if (!active) return;
+      if (!session) {
+        connectedSupabaseUserId.current = null;
+        setAuthSession(null);
+        return;
+      }
+      const name = session.user.user_metadata.full_name;
+      const nextSession = {
+        provider: 'google' as const,
+        idToken: session.access_token,
+        email: session.user.email,
+        name: typeof name === 'string' ? name : undefined,
+        linkedAt: Date.now(),
+        expiresAt: (session.expires_at ?? Math.floor(Date.now() / 1000) + 3600) * 1000,
+      };
+      setAuthSession(nextSession);
+      if (connectedSupabaseUserId.current !== session.user.id) {
+        connectedSupabaseUserId.current = session.user.id;
+        void connectGoogleAccount({ email: nextSession.email, name: nextSession.name })
+          .then(setSyncState)
+          .catch((error: unknown) => {
+            if (active) setAuthMessage(`Account sync could not start: ${friendlyError(error, 'please try again')}`);
+          });
+      }
+    };
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      applySession(session);
+    });
+    void supabase.auth.getSession().then(({ data, error }) => {
+      if (error) throw error;
+      applySession(data.session);
+    }).catch((error: unknown) => {
+      if (active) setAuthMessage(`Google sign-in status could not be checked: ${friendlyError(error, 'please reload')}`);
+    });
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, [supabaseConfigured]);
+
+  useEffect(() => {
+    let active = true;
+    const checkSyncLink = (url: string) => {
+      try {
+        if (new URL(url).searchParams.get('sync') === '1' && active) {
+          setSiblingSyncVisible(true);
+        }
+      } catch {
+        setAuthMessage('The sibling-app link is invalid.');
+      }
+    };
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      checkSyncLink(window.location.href);
+    } else {
+      void Linking.getInitialURL().then((url) => {
+        if (url) checkSyncLink(url);
+      }).catch((error: unknown) => {
+        if (active) setAuthMessage(`The sibling-app link could not be opened: ${friendlyError(error, 'please try again')}`);
+      });
+    }
+    const subscription = Linking.addEventListener('url', ({ url }) => checkSyncLink(url));
+    return () => {
+      active = false;
+      subscription.remove();
     };
   }, []);
 
@@ -436,6 +516,11 @@ export default function App() {
           const next = await connectGoogleAccount({ name: session.name });
           setAuthSession(session);
           setSyncState(next);
+          if (resumeSiblingSyncChoice.current) {
+            resumeSiblingSyncChoice.current = false;
+            setProfileModalVisible(false);
+            setSiblingSyncVisible(true);
+          }
           if (isSupabaseSyncConfigured()) {
             try {
               await connectSupabaseGoogleAccount(session.idToken, session.accessToken);
@@ -719,6 +804,25 @@ export default function App() {
   };
 
   const handleGoogleSignIn = async () => {
+    if (Platform.OS === 'web') {
+      if (!supabaseConfigured) {
+        setAuthMessage('Google sign-in on web needs EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY, with Google enabled in that Supabase project.');
+        return;
+      }
+      setAuthLoading(true);
+      setAuthMessage('');
+      try {
+        const returnUrl = new URL(window.location.href);
+        if (resumeSiblingSyncChoice.current) returnUrl.searchParams.set('sync', '1');
+        await startSupabaseGoogleSignIn(returnUrl.toString());
+      } catch (error) {
+        setAuthMessage(`Google sign-in failed: ${friendlyError(error, 'check the Supabase Google provider and redirect URL settings')}`);
+      } finally {
+        setAuthLoading(false);
+      }
+      return;
+    }
+
     if (!request || !googleClientId) {
       const requiredVariable = Platform.select({
         ios: 'EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID',
@@ -734,11 +838,14 @@ export default function App() {
     try {
       const result = await promptAsync();
       if (result.type === 'cancel' || result.type === 'dismiss') {
+        resumeSiblingSyncChoice.current = false;
         setAuthMessage('Google sign-in was cancelled.');
       } else if (result.type === 'error') {
+        resumeSiblingSyncChoice.current = false;
         setAuthMessage('Google authentication could not be completed.');
       }
     } catch (error) {
+      resumeSiblingSyncChoice.current = false;
       setAuthMessage(`Google sign-in failed: ${friendlyError(error, 'please try again')}`);
     } finally {
       setAuthLoading(false);
@@ -778,6 +885,20 @@ export default function App() {
     } catch {
       setNotice('This support link could not be opened on your device.');
     }
+  };
+
+  const openFurqan = async (withSync: boolean) => {
+    setSiblingSyncVisible(false);
+    if (withSync && (!supabaseConfigured || !authSession)) {
+      setAuthMessage(!supabaseConfigured
+        ? 'To sync Furqan and Mishkah, configure the same Supabase project in both apps and enable its Google provider.'
+        : 'Sign in with the same Google account in both apps. You can confirm the sync after signing in.');
+      resumeSiblingSyncChoice.current = Boolean(supabaseConfigured);
+      setProfileModalVisible(true);
+      return;
+    }
+    if (withSync) await handleSyncNow();
+    await openSupportLink(`${furqanBaseUrl}/${withSync ? '?sync=1' : ''}`);
   };
 
   const toggleChecklistItem = (itemId: string) => {
@@ -1661,7 +1782,7 @@ export default function App() {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Explore Furqan, the companion Quran app"
-                onPress={() => void openSupportLink('https://furqan-quran-app.vercel.app/')}
+                onPress={() => setSiblingSyncVisible(true)}
                 style={styles.moreAccountRow}
               >
                 <View style={styles.moreIcon}><Text style={styles.moreIconText}>۞</Text></View>
@@ -2084,6 +2205,59 @@ export default function App() {
               <Text style={styles.textLink}>Open all settings</Text>
               <Text style={styles.faqArrow}>↗</Text>
             </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setSiblingSyncVisible(false)}
+        transparent
+        visible={siblingSyncVisible}
+      >
+        <View style={styles.profileBackdrop}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Close sibling app prompt"
+            onPress={() => setSiblingSyncVisible(false)}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={styles.detailDrawer}>
+            <View style={styles.profileDrawerHandle} />
+            <View style={styles.profileDrawerHeading}>
+              <Text style={styles.settingGroupTitle}>Connect Furqan and Mishkah</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close sibling app prompt"
+                onPress={() => setSiblingSyncVisible(false)}
+                style={styles.profileCloseButton}
+              >
+                <Text style={styles.profileCloseText}>×</Text>
+              </Pressable>
+            </View>
+            <Text style={styles.settingDescription}>
+              Do you want to sync both apps? Sign in with the same Google account in Furqan and Mishkah. Your progress stays available offline and syncs when both apps are online.
+            </Text>
+            {!supabaseConfigured ? (
+              <Text style={styles.searchHelper}>
+                Shared sync is not configured in this build. You can still open Furqan; sync requires the same Supabase project in both apps.
+              </Text>
+            ) : null}
+            <View style={styles.siblingActions}>
+              <ActionButton
+                label="Yes, sync both apps"
+                onPress={() => void openFurqan(true)}
+                palette={palette}
+                styles={styles}
+                disabled={!supabaseConfigured}
+              />
+              <ActionButton
+                label="Open Furqan without syncing"
+                onPress={() => void openFurqan(false)}
+                palette={palette}
+                styles={styles}
+              />
+            </View>
           </View>
         </View>
       </Modal>
@@ -2867,6 +3041,7 @@ function createStyles(colors: Palette) {
       fontSize: 12,
     },
     guideActions: { flexDirection: 'row', gap: 8, alignItems: 'stretch' },
+    siblingActions: { gap: 8, marginTop: 16 },
     searchInputRow: {
       flexDirection: 'row',
       alignItems: 'center',

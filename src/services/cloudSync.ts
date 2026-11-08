@@ -46,7 +46,7 @@ export function getSupabaseClient(): SupabaseClient | null {
         storageKey: AUTH_STORAGE_KEY,
         autoRefreshToken: true,
         persistSession: true,
-        detectSessionInUrl: false,
+        detectSessionInUrl: Platform.OS === 'web',
       },
     });
   }
@@ -66,6 +66,19 @@ export async function connectSupabaseGoogleAccount(
     ...(accessToken ? { access_token: accessToken } : {}),
   });
   if (error) throw new Error(`Supabase sign-in failed: ${error.message}`);
+}
+
+export async function startSupabaseGoogleSignIn(redirectTo?: string): Promise<void> {
+  const supabase = getSupabaseClient();
+  if (!supabase) throw new Error('Supabase sync is not configured for this build.');
+  if (Platform.OS !== 'web' || typeof window === 'undefined') {
+    throw new Error('Supabase browser sign-in is only available on web.');
+  }
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: redirectTo ?? window.location.href },
+  });
+  if (error) throw new Error(`Google sign-in failed: ${error.message}`);
 }
 
 export async function disconnectSupabaseAccount(): Promise<void> {

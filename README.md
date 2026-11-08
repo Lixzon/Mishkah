@@ -64,10 +64,12 @@ translation.
 
 ### Google account and cross-device sync
 
-Google sign-in requires OAuth client IDs configured for each platform:
+Web Google sign-in uses the Google provider configured in the shared Supabase
+project; it does not need a separate Google web client ID in the app. Add the
+Mishkah and Furqan web origins to Supabase's Google OAuth redirect allow-list.
+Native Mishkah builds also need platform OAuth client IDs:
 
 ```powershell
-$env:EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID = '<Google web client ID>'
 $env:EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID = '<Google iOS client ID>'
 $env:EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID = '<Google Android client ID>'
 ```
@@ -106,6 +108,9 @@ offline library and clearly reports that online answers are unavailable.
 Voice search is available in browsers that implement the Web Speech API and
 requires microphone permission. Recognition and data handling depend on the
 browser's speech service; native builds can use typed search.
+
+Furqan's Rafiq service contract and the steps for enabling its online mode are
+documented in [Furqan's Rafiq setup guide](https://github.com/Lixzon/furqan-quran-app/blob/main/RAFIQ_SETUP.md).
 
 ## Architecture
 
