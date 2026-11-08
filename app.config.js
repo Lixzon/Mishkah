@@ -48,6 +48,7 @@ module.exports = ({ config }) => {
       syncApiUrl: process.env.EXPO_PUBLIC_SYNC_API_URL ?? '',
       supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL ?? '',
       supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '',
+      rafiqApiUrl: process.env.EXPO_PUBLIC_RAFIQ_API_URL ?? '',
       furqanBaseUrl: process.env.EXPO_PUBLIC_FURQAN_URL ?? 'https://furqan-quran-app.vercel.app',
     },
   };

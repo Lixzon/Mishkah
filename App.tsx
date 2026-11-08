@@ -4,7 +4,7 @@ import * as Crypto from 'expo-crypto';
 import * as SplashScreen from 'expo-splash-screen';
 import * as WebBrowser from 'expo-web-browser';
 import { useIdTokenAuthRequest } from 'expo-auth-session/providers/google';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ComponentRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   AppState,
@@ -64,13 +64,13 @@ import {
 } from './src/services/preferences';
 import { schedulePrayerReminders } from './src/services/notifications';
 import { GoogleSignInButton } from './src/components/GoogleSignInButton';
-import { AiAssistantBar, type AssistantDestination } from './src/components/AiAssistantBar';
 import { WorshipHub, type WorshipTab } from './src/components/WorshipHub';
 import { GuidanceHub } from './src/components/GuidanceHub';
 import { HISN_AL_MUSLIM_DUAS } from './src/domain/adhkar';
 import { getDailyHadith } from './src/domain/hadith';
 import { resetPostSalahCounts } from './src/domain/tasbeeh';
 import { getDailyVerse, type DailyVerse } from './src/services/dailyVerse';
+import { searchRafiqOnline, type RafiqOnlineAnswer } from './src/services/rafiq';
 import { clearAuthSession, isAuthSessionExpired, loadAuthSession, saveAuthSession } from './src/services/auth';
 import {
   connectSupabaseGoogleAccount,
@@ -93,6 +93,34 @@ WebBrowser.maybeCompleteAuthSession();
 
 type Screen = 'Prayer' | 'Global' | 'Fasting' | 'Guide' | 'More' | 'Worship' | 'Settings' | 'Community';
 type PrimaryScreen = 'Prayer' | 'Worship' | 'Community' | 'Guide' | 'More';
+type SpeechResultLike = ArrayLike<{ transcript: string }>;
+interface SpeechRecognitionEventLike {
+  results: ArrayLike<SpeechResultLike>;
+}
+interface SpeechRecognitionErrorLike {
+  error: string;
+}
+interface SpeechRecognitionLike {
+  lang: string;
+  interimResults: boolean;
+  maxAlternatives: number;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorLike) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+interface SpeechRecognitionWindow extends Window {
+  SpeechRecognition?: new () => SpeechRecognitionLike;
+  webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+}
+interface HeaderAction {
+  label: string;
+  glyph: string;
+  tint: string;
+  background: string;
+  onPress: () => void;
+}
 const PRIMARY_TABS: readonly { screen: PrimaryScreen; label: string; icon: string }[] = [
   { screen: 'Prayer', label: 'Home', icon: '⌂' },
   { screen: 'Worship', label: 'Library', icon: '▤' },
@@ -256,11 +284,19 @@ export default function App() {
   const [cityQuery, setCityQuery] = useState('');
   const [capacityModalVisible, setCapacityModalVisible] = useState(false);
   const [profileModalVisible, setProfileModalVisible] = useState(false);
+  const [streakModalVisible, setStreakModalVisible] = useState(false);
   const [universalSearchVisible, setUniversalSearchVisible] = useState(false);
   const [universalSearchQuery, setUniversalSearchQuery] = useState('');
+  const [isVoiceSearching, setIsVoiceSearching] = useState(false);
+  const [voiceSearchMessage, setVoiceSearchMessage] = useState('');
+  const speechRecognition = useRef<SpeechRecognitionLike | null>(null);
+  const citySearchRef = useRef<ComponentRef<typeof TextInput>>(null);
   const [worshipTab, setWorshipTab] = useState<WorshipTab>('Hadith');
+  const [guidanceSection, setGuidanceSection] = useState<'overview' | 'qibla' | 'wellness'>('overview');
   const [guideQuery, setGuideQuery] = useState('');
   const [guideAnswer, setGuideAnswer] = useState(getLocalAnswer(''));
+  const [onlineAnswer, setOnlineAnswer] = useState<RafiqOnlineAnswer | null>(null);
+  const [isSearchingOnline, setIsSearchingOnline] = useState(false);
   const [healthMessage, setHealthMessage] = useState('');
   const [developerKey, setDeveloperKey] = useState('');
   const [developerUnlocked, setDeveloperUnlocked] = useState(false);
@@ -278,6 +314,7 @@ export default function App() {
   const googleIosClientId = String(Constants.expoConfig?.extra?.googleIosClientId ?? '').trim();
   const googleAndroidClientId = String(Constants.expoConfig?.extra?.googleAndroidClientId ?? '').trim();
   const syncApiUrl = String(Constants.expoConfig?.extra?.syncApiUrl ?? '').trim();
+  const rafiqApiUrl = String(Constants.expoConfig?.extra?.rafiqApiUrl ?? '').trim();
   const syncConfigured = isCrossDeviceSyncConfigured();
   const googleClientId = Platform.select({
     ios: googleIosClientId,
@@ -302,6 +339,10 @@ export default function App() {
   const city =
     getCity(preferences.selectedCityId) ??
     getCity(DEFAULT_PREFERENCES.selectedCityId);
+
+  useEffect(() => {
+    if (screen === 'Global') citySearchRef.current?.focus();
+  }, [screen]);
 
   useEffect(() => {
     let active = true;
@@ -342,6 +383,11 @@ export default function App() {
       uninstallBatteryGovernor();
       uninstallExceptionRecorder?.();
     };
+  }, []);
+
+  useEffect(() => () => {
+    speechRecognition.current?.stop();
+    speechRecognition.current = null;
   }, []);
 
   useEffect(() => {
@@ -813,10 +859,31 @@ export default function App() {
   const askGuide = (query: string) => {
     setGuideQuery(query);
     setGuideAnswer(getLocalAnswer(query));
+    setOnlineAnswer(null);
   };
 
-  const submitUniversalSearch = () => {
-    const query = universalSearchQuery.trim();
+  const searchOnline = async (query: string) => {
+    if (!rafiqApiUrl) {
+      setNotice('Current online answers are not configured. The offline guide is still available.');
+      return;
+    }
+    if (!query.trim()) {
+      setNotice('Enter a question before searching current sources.');
+      return;
+    }
+    setIsSearchingOnline(true);
+    setOnlineAnswer(null);
+    try {
+      setOnlineAnswer(await searchRafiqOnline(rafiqApiUrl, query));
+    } catch (error) {
+      setNotice(friendlyError(error, 'Rafiq could not search current sources.'));
+    } finally {
+      setIsSearchingOnline(false);
+    }
+  };
+
+  const searchAndNavigate = (queryValue: string) => {
+    const query = queryValue.trim();
     if (!query) return;
     const normalized = query.toLocaleLowerCase();
     const destination: Screen = /community|project idea|event idea/.test(normalized)
@@ -847,6 +914,141 @@ export default function App() {
     }
     setUniversalSearchVisible(false);
   };
+
+  const submitUniversalSearch = () => searchAndNavigate(universalSearchQuery);
+
+  const startVoiceSearch = () => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') {
+      setVoiceSearchMessage('Voice search is not available in this app build. You can still type your search.');
+      return;
+    }
+    const SpeechRecognition = (window as SpeechRecognitionWindow).SpeechRecognition ??
+      (window as SpeechRecognitionWindow).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setVoiceSearchMessage('This browser does not support voice search. Try a supported browser or type your search.');
+      return;
+    }
+    if (speechRecognition.current) {
+      speechRecognition.current.stop();
+      speechRecognition.current = null;
+      setIsVoiceSearching(false);
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    setVoiceSearchMessage('');
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.onresult = (event) => {
+      const transcript = event.results[0]?.[0]?.transcript?.trim();
+      if (transcript) {
+        setVoiceSearchMessage('');
+        setUniversalSearchQuery(transcript);
+        searchAndNavigate(transcript);
+      }
+    };
+    recognition.onerror = (event) => {
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        setVoiceSearchMessage('Microphone access was denied. Allow it in your browser settings, or type your search.');
+      } else {
+        setVoiceSearchMessage(`Voice search could not complete (${event.error}). Please try again or type your search.`);
+      }
+    };
+    recognition.onend = () => {
+      speechRecognition.current = null;
+      setIsVoiceSearching(false);
+    };
+    speechRecognition.current = recognition;
+    setIsVoiceSearching(true);
+    try {
+      recognition.start();
+    } catch (error) {
+      speechRecognition.current = null;
+      setIsVoiceSearching(false);
+      setVoiceSearchMessage(friendlyError(error, 'Voice search could not start.'));
+    }
+  };
+
+  const searchAction: HeaderAction = {
+    label: 'Search',
+    glyph: '⌕',
+    tint: '#146B5B',
+    background: '#DDEFE8',
+    onPress: () => setUniversalSearchVisible(true),
+  };
+  const rafiqAction: HeaderAction = {
+    label: 'Rafiq AI',
+    glyph: '✦',
+    tint: '#7546A8',
+    background: '#EEE5F6',
+    onPress: () => setScreen('Guide'),
+  };
+  const headerLeftActions: HeaderAction[] = screen === 'Prayer'
+    ? [
+        {
+          label: `Streak ${syncState?.streak ?? 0}`,
+          glyph: '🔥',
+          tint: '#A65322',
+          background: '#FCE8D8',
+          onPress: () => setStreakModalVisible(true),
+        },
+        {
+          label: 'Prayer',
+          glyph: '☾',
+          tint: '#176A83',
+          background: '#DDEFF4',
+          onPress: () => setScreen('Global'),
+        },
+      ]
+    : screen === 'Global'
+      ? [
+          { label: 'Home', glyph: '⌂', tint: '#146B5B', background: '#DDEFE8', onPress: () => setScreen('Prayer') },
+          {
+            label: 'Add city',
+            glyph: '+',
+            tint: '#176A83',
+            background: '#DDEFF4',
+            onPress: () => {
+              citySearchRef.current?.focus();
+            },
+          },
+        ]
+      : screen === 'Worship'
+        ? [
+            { label: 'Hadith', glyph: '۞', tint: '#A65322', background: '#FCE8D8', onPress: () => setWorshipTab('Hadith') },
+            { label: 'Du’as', glyph: '✧', tint: '#7546A8', background: '#EEE5F6', onPress: () => setWorshipTab('Duas') },
+          ]
+        : screen === 'Guide'
+          ? [
+              { label: 'Qibla', glyph: '◉', tint: '#176A83', background: '#DDEFF4', onPress: () => setGuidanceSection('qibla') },
+              { label: 'Wellness', glyph: '✿', tint: '#146B5B', background: '#DDEFE8', onPress: () => setGuidanceSection('wellness') },
+            ]
+          : screen === 'More'
+            ? [
+                { label: 'Account', glyph: '◎', tint: '#7546A8', background: '#EEE5F6', onPress: () => setProfileModalVisible(true) },
+                { label: 'Settings', glyph: '⚙', tint: '#A65322', background: '#FCE8D8', onPress: () => setScreen('Settings') },
+              ]
+            : screen === 'Settings'
+              ? [
+                  { label: 'Profile', glyph: '◉', tint: '#7546A8', background: '#EEE5F6', onPress: () => setScreen('More') },
+                  { label: 'Prayer', glyph: '☾', tint: '#176A83', background: '#DDEFF4', onPress: () => setScreen('Global') },
+                ]
+              : screen === 'Fasting'
+                ? [
+                    { label: 'Home', glyph: '⌂', tint: '#146B5B', background: '#DDEFE8', onPress: () => setScreen('Prayer') },
+                    { label: 'Reminders', glyph: '◷', tint: '#A65322', background: '#FCE8D8', onPress: () => setScreen('Settings') },
+                  ]
+                : [
+                    { label: 'Home', glyph: '⌂', tint: '#146B5B', background: '#DDEFE8', onPress: () => setScreen('Prayer') },
+                    {
+                      label: 'About',
+                      glyph: 'i',
+                      tint: '#176A83',
+                      background: '#DDEFF4',
+                      onPress: () => setNotice('Community Hub is a placeholder for now; proposals and chat are not active.'),
+                    },
+                  ];
+  const headerRightActions = [searchAction, rafiqAction];
 
   if (!isReady || !city || !prayerTimes || !nextPrayer) {
     return (
@@ -881,7 +1083,6 @@ export default function App() {
       <View style={[styles.screen, isWideLayout && styles.wideScreen]}>
         {isWideLayout ? (
           <View style={styles.desktopSidebar}>
-            <Text style={styles.sidebarBrand}>Mishkah</Text>
             {PRIMARY_TABS.map((tab) => {
               const active = isPrimaryTabActive(tab.screen, screen);
               return (
@@ -901,44 +1102,39 @@ export default function App() {
         ) : null}
         <View style={[styles.mainColumn, isWideLayout && styles.mainColumnWide]}>
         <View style={styles.topBar}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Mishkah home"
-            onPress={() => setScreen('Prayer')}
-            style={styles.brandLockup}
-          >
-            <View style={styles.brandMark}>
-              <Image
-                source={require('./assets/brand-mark.png')}
-                resizeMode="contain"
-                style={styles.brandImage}
-              />
-            </View>
-            <View>
-              <Text style={styles.brandName}>Mishkah</Text>
-              <Text style={styles.brandCaption}>A little light, wherever you are</Text>
-            </View>
-          </Pressable>
           <View style={styles.headerActions}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Change your city"
-              onPress={() => setScreen('Global')}
-              style={styles.locationButton}
-            >
-              <Text style={styles.locationLabel}>YOUR CITY</Text>
-              <Text style={styles.locationName} numberOfLines={1}>
-                {city.name}⌄
-              </Text>
-            </Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel="Open Rafiq guidance" onPress={() => setScreen('Guide')} style={styles.headerActionButton}>
-              <Text style={styles.headerActionGlyph}>✦</Text>
-              <Text style={styles.headerActionLabel}>Rafiq</Text>
-            </Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel="Search Mishkah" onPress={() => setUniversalSearchVisible(true)} style={styles.headerActionButton}>
-              <Text style={styles.headerActionGlyph}>⌕</Text>
-              <Text style={styles.headerActionLabel}>Search</Text>
-            </Pressable>
+            <View style={styles.headerActionGroup}>
+              {headerLeftActions.map((action) => (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={action.label}
+                  key={action.label}
+                  onPress={action.onPress}
+                  style={styles.headerActionButton}
+                >
+                  <Text style={[styles.headerActionGlyph, { color: action.tint, backgroundColor: action.background }]}>
+                    {action.glyph}
+                  </Text>
+                  <Text numberOfLines={1} style={styles.headerActionLabel}>{action.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <View style={styles.headerActionGroup}>
+              {headerRightActions.map((action) => (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={action.label === 'Search' ? 'Search Mishkah' : 'Open Rafiq guidance'}
+                  key={action.label}
+                  onPress={action.onPress}
+                  style={styles.headerActionButton}
+                >
+                  <Text style={[styles.headerActionGlyph, { color: action.tint, backgroundColor: action.background }]}>
+                    {action.glyph}
+                  </Text>
+                  <Text numberOfLines={1} style={styles.headerActionLabel}>{action.label}</Text>
+                </Pressable>
+              ))}
+            </View>
           </View>
         </View>
 
@@ -1171,8 +1367,8 @@ export default function App() {
           {screen === 'Global' ? (
             <>
               <View style={styles.introBlock}>
-                <Text style={styles.eyebrow}>YOUR FIVE-SLOT HUB</Text>
-                <Text style={styles.pageTitle}>A little closer, everywhere.</Text>
+                <Text style={styles.eyebrow}>PRAYER & GLOBAL TIMES</Text>
+                <Text style={styles.pageTitle}>Prayer times, wherever you are.</Text>
                 <Text style={styles.bodyText}>
                   Prayer times are worked out only when you open a place. Your saved cities stay on this device.
                 </Text>
@@ -1181,6 +1377,7 @@ export default function App() {
                 <Text style={styles.searchIcon}>⌕</Text>
                 <TextInput
                   accessibilityLabel="Search cities"
+                  ref={citySearchRef}
                   onChangeText={setCityQuery}
                   placeholder="Search a city or country"
                   placeholderTextColor={palette.muted}
@@ -1408,7 +1605,7 @@ export default function App() {
                 <Text style={styles.eyebrow}>YOUR MISHKAH COMPANION</Text>
                 <Text style={styles.pageTitle}>A little guidance.</Text>
                 <Text style={styles.bodyText}>
-                  Answers come from a small on-device library. Nothing you ask is sent to a server.
+                  Start with private, on-device guidance or search current online sources when configured.
                 </Text>
               </View>
               <View style={styles.assistantCard}>
@@ -1437,10 +1634,43 @@ export default function App() {
                   palette={palette}
                   styles={styles}
                 />
+                <ActionButton
+                  label={isSearchingOnline ? 'Searching current sources…' : 'Search current online sources'}
+                  onPress={() => void searchOnline(guideQuery)}
+                  palette={palette}
+                  styles={styles}
+                  disabled={isSearchingOnline}
+                  busy={isSearchingOnline}
+                />
+                {!rafiqApiUrl ? (
+                  <Text style={styles.settingDescription}>
+                    Online answers are not configured in this build. Offline guidance remains available.
+                  </Text>
+                ) : null}
                 <View style={styles.answerCard}>
                   <Text style={styles.answerTitle}>{guideAnswer.title}</Text>
                   <Text style={styles.answerText}>{guideAnswer.answer}</Text>
                 </View>
+                {onlineAnswer ? (
+                  <View style={styles.answerCard}>
+                    <Text style={styles.answerTitle}>Current sources</Text>
+                    <Text style={styles.answerText}>{onlineAnswer.answer}</Text>
+                    {onlineAnswer.sources.map((source) => (
+                      <Pressable
+                        accessibilityRole="link"
+                        key={source.url}
+                        onPress={() => void openSupportLink(source.url)}
+                        style={styles.faqRow}
+                      >
+                        <Text style={styles.faqText}>{source.title}</Text>
+                        <Text style={styles.faqArrow}>↗</Text>
+                      </Pressable>
+                    ))}
+                    <Text style={styles.settingDescription}>
+                      Online answers can be incomplete or out of date; verify important matters with trusted sources.
+                    </Text>
+                  </View>
+                ) : null}
               </View>
               <Text style={styles.sectionCaption}>A few things you can ask</Text>
               {getLocalFaqs().map((faq) => (
@@ -1462,6 +1692,7 @@ export default function App() {
                   hour: '2-digit',
                   hourCycle: 'h23',
                 }).format(now))}
+                initialSection={guidanceSection}
                 palette={palette}
               />
             </>
@@ -1820,27 +2051,6 @@ export default function App() {
             <Text style={styles.footerBrand}>by LIXZON</Text>
           </View>
         </ScrollView>
-        <AiAssistantBar
-          palette={palette}
-          onNavigate={(destination: AssistantDestination, query: string) => {
-            if (destination === 'Worship') {
-              const normalized = query.toLocaleLowerCase();
-              setWorshipTab(/tasbeeh|tasbih|dhikr|adhkar|remembrance/.test(normalized)
-                ? 'Tasbeeh'
-                : /reciter|audio quran|quran audio/.test(normalized)
-                  ? 'Reciters'
-                  : /story|stories|sahaba|companion|dajjal|end.?times|archive|halal food|adab/.test(normalized)
-                    ? 'Archives'
-                  : /dua|supplication|travel|sleep/.test(normalized)
-                  ? 'Duas'
-                  : 'Hadith');
-              setScreen('Worship');
-              return;
-            }
-            setScreen(destination);
-            if (destination === 'Guide') askGuide(query);
-          }}
-        />
         {!isWideLayout ? (
         <View style={styles.bottomNav}>
           {PRIMARY_TABS.map((tab) => {
@@ -1946,6 +2156,72 @@ export default function App() {
       </Modal>
 
       <Modal
+        animationType="slide"
+        onRequestClose={() => setStreakModalVisible(false)}
+        transparent
+        visible={streakModalVisible}
+      >
+        <View style={styles.profileBackdrop}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Close streak"
+            onPress={() => setStreakModalVisible(false)}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={styles.profileDrawer}>
+            <View style={styles.profileDrawerHandle} />
+            <View style={styles.profileDrawerHeading}>
+              <View>
+                <Text style={styles.settingGroupTitle}>Furqan reading streak</Text>
+                <Text style={styles.settingDescription}>Your Qur’an reading progress from the companion app.</Text>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close streak"
+                onPress={() => setStreakModalVisible(false)}
+                style={styles.profileCloseButton}
+              >
+                <Text style={styles.profileCloseText}>×</Text>
+              </Pressable>
+            </View>
+            <View style={styles.streakPanel}>
+              <View style={styles.streakHeading}>
+                <View>
+                  <Text style={styles.moreRowTitle}>Current streak</Text>
+                  <Text style={styles.moreRowDescription}>
+                    {syncApiUrl
+                      ? 'Verified progress refreshes when your account connects.'
+                      : 'Connect a shared sync service to import verified Furqan progress.'}
+                  </Text>
+                </View>
+                <Text style={styles.streakCount}>{syncState?.streak ?? 0}<Text style={styles.streakUnit}> days</Text></Text>
+              </View>
+              {([
+                { id: 'extended-hadith', days: 7, label: 'Expanded Hadith collection' },
+                { id: 'premium-theme-collection', days: 14, label: 'Premium theme collection' },
+                { id: 'reciter-library', days: 21, label: 'Audio reciter library' },
+              ] as const).map((reward) => {
+                const unlocked = syncState?.featuresUnlocked.includes(reward.id) === true;
+                return (
+                  <View key={reward.id} style={styles.rewardRow}>
+                    <Text style={[styles.rewardMark, unlocked && styles.rewardMarkUnlocked]}>{unlocked ? '✓' : '·'}</Text>
+                    <Text style={styles.rewardLabel}>{reward.label}</Text>
+                    <Text style={styles.rewardRequirement}>{unlocked ? 'Unlocked' : `${reward.days} days`}</Text>
+                  </View>
+                );
+              })}
+            </View>
+            <ActionButton
+              label="Open Furqan"
+              onPress={() => void openSupportLink('https://furqan-quran-app.vercel.app/')}
+              palette={palette}
+              styles={styles}
+            />
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
         animationType="fade"
         onRequestClose={() => setUniversalSearchVisible(false)}
         transparent
@@ -1956,19 +2232,36 @@ export default function App() {
           <View style={styles.searchDrawer}>
             <View style={styles.profileDrawerHandle} />
             <Text style={styles.settingGroupTitle}>Search Mishkah</Text>
-            <TextInput
-              accessibilityLabel="Search Mishkah features"
-              autoFocus
-              onChangeText={setUniversalSearchQuery}
-              onSubmitEditing={submitUniversalSearch}
-              placeholder="Try Qibla, Du’a, Tasbeeh, fasting…"
-              placeholderTextColor={palette.muted}
-              returnKeyType="search"
-              style={styles.guideInput}
-              value={universalSearchQuery}
-            />
+            <View style={styles.searchEntryRow}>
+              <TextInput
+                accessibilityLabel="Search Mishkah features"
+                autoFocus
+                onChangeText={setUniversalSearchQuery}
+                onSubmitEditing={submitUniversalSearch}
+                placeholder="Try Qibla, Du’a, Tasbeeh, fasting…"
+                placeholderTextColor={palette.muted}
+                returnKeyType="search"
+                style={[styles.guideInput, styles.searchEntryInput]}
+                value={universalSearchQuery}
+              />
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={isVoiceSearching ? 'Stop voice search' : 'Search by voice'}
+                onPress={startVoiceSearch}
+                style={[styles.voiceSearchButton, isVoiceSearching && styles.voiceSearchButtonActive]}
+              >
+                <Text style={[styles.voiceSearchGlyph, isVoiceSearching && styles.voiceSearchGlyphActive]}>
+                  {isVoiceSearching ? '■' : '🎙'}
+                </Text>
+              </Pressable>
+            </View>
+            <Text style={styles.settingDescription}>
+              {voiceSearchMessage || (isVoiceSearching
+                ? 'Listening… tap the microphone to stop.'
+                : 'Voice search uses your browser’s speech service. Microphone support depends on your browser; you can always type instead.')}
+            </Text>
             <ActionButton label="Search and open" onPress={submitUniversalSearch} palette={palette} styles={styles} />
-            <Text style={styles.settingDescription}>Rafiq can guide you to a screen or explain where a feature lives. Voice call mode needs a speech service and is not active in this build.</Text>
+            <Text style={styles.settingDescription}>Rafiq can guide you to a screen or explain where a feature lives.</Text>
           </View>
         </View>
       </Modal>
@@ -2162,7 +2455,6 @@ function createStyles(colors: Palette) {
       borderRightColor: colors.line,
       backgroundColor: colors.surface,
     },
-    sidebarBrand: { color: colors.accent, fontSize: 20, fontWeight: '700', paddingHorizontal: 12, marginBottom: 22 },
     desktopNavButton: { minHeight: 49, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 13, borderRadius: 13, marginBottom: 5 },
     desktopNavButtonActive: { backgroundColor: colors.surfaceRaised },
     desktopNavIcon: { width: 22, color: colors.muted, fontSize: 16, textAlign: 'center' },
@@ -2170,48 +2462,31 @@ function createStyles(colors: Palette) {
     desktopNavLabelActive: { color: colors.accent, fontWeight: '700' },
     topBar: {
       minHeight: 76,
-      paddingHorizontal: 22,
+      paddingHorizontal: 12,
       paddingTop: Platform.OS === 'android' ? Math.max(NativeStatusBar.currentHeight ?? 0, 10) : 10,
       paddingBottom: 10,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
     },
-    brandLockup: { flexDirection: 'row', alignItems: 'center', gap: 11 },
-    brandMark: {
-      width: 38,
-      height: 38,
-      borderRadius: 14,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: '#145B50',
-    },
-    brandImage: { width: 31, height: 31 },
-    brandName: { color: colors.ink, fontSize: 19, fontWeight: '700', letterSpacing: 0.1 },
-    brandCaption: { color: colors.muted, fontSize: 10, marginTop: 2 },
-    headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-    locationButton: {
-      maxWidth: '55%',
-      alignItems: 'flex-end',
-      paddingVertical: 7,
-      paddingLeft: 12,
-    },
-    locationLabel: { color: colors.muted, fontSize: 9, fontWeight: '700', letterSpacing: 1.5 },
-    locationName: { color: colors.ink, fontSize: 13, fontWeight: '600', marginTop: 4 },
-    profileButton: { minWidth: 43, alignItems: 'center', justifyContent: 'center', paddingVertical: 4 },
-    headerActionButton: { minWidth: 42, alignItems: 'center', justifyContent: 'center', paddingVertical: 4 },
+    headerActions: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    headerActionGroup: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    headerActionButton: { minWidth: 44, alignItems: 'center', justifyContent: 'center', paddingVertical: 4 },
     headerActionGlyph: { width: 30, height: 30, borderRadius: 15, textAlign: 'center', textAlignVertical: 'center', overflow: 'hidden', backgroundColor: colors.surfaceRaised, color: colors.accent, fontSize: 17, lineHeight: 30 },
     headerActionLabel: { color: colors.muted, fontSize: 8, fontWeight: '600', marginTop: 2 },
-    profileGlyph: {
-      width: 31,
-      height: 31,
-      borderRadius: 16,
+    searchEntryRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    searchEntryInput: { flex: 1 },
+    voiceSearchButton: {
+      width: 46,
+      height: 46,
+      borderRadius: 14,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: colors.surfaceRaised,
     },
-    profileGlyphText: { color: colors.accent, fontSize: 17, fontWeight: '600' },
-    profileLabel: { color: colors.muted, fontSize: 8, fontWeight: '600', marginTop: 2 },
+    voiceSearchButtonActive: { backgroundColor: colors.accent },
+    voiceSearchGlyph: { color: colors.accent, fontSize: 19, fontWeight: '700' },
+    voiceSearchGlyphActive: { color: colors.accentInk },
     bottomNav: {
       minHeight: 65,
       borderTopWidth: StyleSheet.hairlineWidth,

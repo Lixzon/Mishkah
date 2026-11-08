@@ -45,6 +45,23 @@ the site in Safari and choose **Add to Home Screen** from Share. The PWA caches
 the app shell for offline launching after its first successful load. This
 installs the website as a home-screen app; it is not an APK or App Store binary.
 
+### Rafiq online answers and voice search
+
+Rafiq keeps its on-device guidance available offline. To enable current,
+source-linked answers, configure `EXPO_PUBLIC_RAFIQ_API_URL` to a secured HTTPS
+backend endpoint (localhost is allowed for local development). The app sends a
+POST JSON body shaped as `{ "query": "question", "locale": "en" }`; the endpoint
+must return `{ "answer": "response", "sources": [{ "title": "Source", "url":
+"https://example.com" }] }`. Answers are limited to 12,000 characters, and up to
+five HTTPS source links are displayed. Keep AI/search provider credentials on
+the backend, never in the app. If no endpoint is configured or the network is
+unavailable, offline guidance remains usable.
+
+Voice search is available on web browsers that implement the Web Speech API and
+requires microphone permission. Speech recognition is provided by the browser's
+speech service; support and data handling depend on that browser. Native builds
+can use typed search.
+
 ### Worship library
 
 The **More** section groups Hadith, Tasbeeh, daily Adhkar, Duas, reciters, and
@@ -115,7 +132,8 @@ never put a Google client secret or server credential in these variables.
   the app leaves the foreground. Mishkah acquires no wake locks and registers
   no background audio listeners or services.
 - `src/domain/assistant.ts` contains the offline FAQ and checklist answers.
-  User questions are matched on-device; there is no remote AI service.
+  `src/services/rafiq.ts` validates optional source-linked answers from the
+  configured backend; provider credentials remain server-side.
 
 ## Developer diagnostics key
 

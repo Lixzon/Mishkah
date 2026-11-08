@@ -22,12 +22,13 @@ type GuidancePalette = {
 interface GuidanceHubProps {
   city: City;
   hour: number;
+  initialSection?: 'overview' | 'qibla' | 'wellness';
   palette: GuidancePalette;
 }
 
 type Coordinates = { latitude: number; longitude: number };
 
-export function GuidanceHub({ city, hour, palette }: GuidanceHubProps) {
+export function GuidanceHub({ city, hour, initialSection = 'overview', palette }: GuidanceHubProps) {
   const [section, setSection] = useState<'overview' | 'qibla' | 'wellness'>('overview');
   const [coordinates, setCoordinates] = useState<Coordinates>({
     latitude: city.latitude,
@@ -59,6 +60,10 @@ export function GuidanceHub({ city, hour, palette }: GuidanceHubProps) {
       : hour >= 22 || hour < 4
         ? 'Settle into your evening with the supplication before sleep.'
         : 'Return to remembrance whenever you need a gentle pause.';
+
+  useEffect(() => {
+    setSection(initialSection);
+  }, [initialSection]);
 
   useEffect(() => {
     if (!compassEnabled) return;
