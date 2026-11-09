@@ -1,7 +1,7 @@
-# Mishkah
+﻿# Mishkah
 
 Mishkah is a cross-platform, offline-first React Native application by LIXZON.
-Its tagline is “The Seeker who carries the Light of Guidance across horizons.”
+Its tagline is â€œThe Seeker who carries the Light of Guidance across horizons.â€
 It remains independently deployable; optional cross-device data sync uses a
 shared HTTPS service rather than direct access to a sibling app's local data.
 
@@ -62,31 +62,23 @@ Hisn al-Muslim or a substitute for checking religious rulings with a trusted
 scholar. English wording is concise explanatory meaning, not a published
 translation.
 
-### Google account and Mishkah sync
+### Pairing with Furqan
 
-Google sign-in is for the user's Mishkah account and does not connect to Furqan.
-Web sign-in uses the Google provider configured in the Supabase project; it
-does not need a separate Google web client ID in the app. Native Mishkah builds
-also need platform OAuth client IDs:
+Mishkah and Furqan share progress through one private 20-character pairing
+code; there is no Google or email sign-in. Set `EXPO_PUBLIC_SUPABASE_URL` and
+`EXPO_PUBLIC_SUPABASE_ANON_KEY` for the shared Supabase project, apply both
+migrations listed in `SUPABASE_SETUP.md`, then create a code in Furqan
+(Settings -> Pair Mishkah) and enter it in Mishkah (Settings -> Pair with
+Furqan).
 
-```powershell
-$env:EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID = '<Google iOS client ID>'
-$env:EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID = '<Google Android client ID>'
-```
+While paired, Mishkah shows Furqan's reading streak, the same verse of the
+day, and opens Qur'an references in the full surah inside Furqan. The code is
+stored in SecureStore on native devices and AsyncStorage on web. Unpairing
+removes it from this device only.
 
-Native ID tokens are stored with SecureStore. Browser sign-in is kept in memory;
-the app does not persist bearer tokens in browser storage. Queued updates stay
-local unless `EXPO_PUBLIC_SYNC_API_URL` points to a configured HTTPS service.
-That endpoint must verify the Google ID token, durably store accepted events,
-and return JSON shaped as `{ "acceptedIds": ["event-id"] }` to the client’s
-POST request. The client only removes events explicitly acknowledged by the
-service. Without a sync service, account sign-in remains available while
-progress and settings stay on this device. Furqan's local browser storage is
-not read or synced by Mishkah.
-
-Set these variables in the build environment before exporting web or building
-native apps. They are read by `app.config.js` and embedded into the app config;
-never put a Google client secret or server credential in these variables.
+Without those settings Mishkah stays local-only and does not claim that sync
+is active. The weekly system report in Settings shows storage, preferences,
+pairing, and today's verse, and stays on the device.
 
 ### Rafiq online answers
 

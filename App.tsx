@@ -2,9 +2,6 @@ import { StatusBar } from 'expo-status-bar';
 import Constants from 'expo-constants';
 import * as Crypto from 'expo-crypto';
 import * as SplashScreen from 'expo-splash-screen';
-import * as WebBrowser from 'expo-web-browser';
-import type { Session } from '@supabase/supabase-js';
-import { useIdTokenAuthRequest } from 'expo-auth-session/providers/google';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -64,7 +61,6 @@ import {
   type AppPreferences,
 } from './src/services/preferences';
 import { schedulePrayerReminders } from './src/services/notifications';
-import { GoogleSignInButton } from './src/components/GoogleSignInButton';
 import { VoiceSearchButton } from './src/components/VoiceSearchButton';
 import { WorshipHub, type WorshipTab } from './src/components/WorshipHub';
 import { GuidanceHub } from './src/components/GuidanceHub';
@@ -73,25 +69,27 @@ import { getDailyHadith } from './src/domain/hadith';
 import { resetPostSalahCounts } from './src/domain/tasbeeh';
 import { getDailyVerse, type DailyVerse } from './src/services/dailyVerse';
 import { searchRafiqOnline, type RafiqOnlineAnswer } from './src/services/rafiq';
-import { clearAuthSession, isAuthSessionExpired, loadAuthSession, saveAuthSession } from './src/services/auth';
 import {
-  connectSupabaseGoogleAccount,
-  disconnectSupabaseAccount,
-  getSupabaseClient,
+  createPairCode,
+  forgetPairCode,
+  getSavedPairCode,
   isSupabaseSyncConfigured,
-  startSupabaseGoogleSignIn,
+  joinPairCode,
 } from './src/services/cloudSync';
 import {
-  connectGoogleAccount,
-  disconnectGoogleAccount,
   flushSyncQueue,
   isCrossDeviceSyncConfigured,
+  linkPairedAccount,
   readSyncState,
-  syncEngagement,
+  unlinkPairedAccount,
   type SyncState,
 } from './src/services/syncEngine';
-
-WebBrowser.maybeCompleteAuthSession();
+import { readPairedHighlight, syncPairedData } from './src/services/pairSync';
+import {
+  createSystemReport,
+  readLastSystemReport,
+  type SystemReport,
+} from './src/services/systemReport';
 
 type Screen = 'Prayer' | 'Global' | 'Fasting' | 'Guide' | 'More' | 'Worship' | 'Settings' | 'Community';
 type PrimaryScreen = 'Prayer' | 'Worship' | 'Community' | 'Guide' | 'More';
@@ -199,7 +197,6 @@ const FASTING_CHECKLIST = [
 ] as const;
 
 const BRAND_TAGLINE = 'The Seeker who carries the Light of Guidance across horizons.';
-const UNCONFIGURED_GOOGLE_CLIENT_ID = 'unconfigured-google-client-id';
 const DEV_KEY_DIGEST: unknown = Constants.expoConfig?.extra?.developerKeyDigest;
 
 void SplashScreen.preventAutoHideAsync().catch((error: unknown) => {
@@ -276,37 +273,19 @@ export default function App() {
   const [developerMessage, setDeveloperMessage] = useState('');
   const [developerDigest, setDeveloperDigest] = useState('');
   const [isCheckingHealth, setIsCheckingHealth] = useState(false);
+  const [systemReport, setSystemReport] = useState<SystemReport | null>(null);
+  const [reportBusy, setReportBusy] = useState(false);
   const [syncState, setSyncState] = useState<SyncState | null>(null);
-  const [authSession, setAuthSession] = useState<Awaited<ReturnType<typeof loadAuthSession>>>(null);
-  const [authLoading, setAuthLoading] = useState(false);
-  const [authMessage, setAuthMessage] = useState('');
-  const connectedSupabaseUserId = useRef<string | null>(null);
+  const [pairCode, setPairCode] = useState<string | null>(null);
+  const [pairEntry, setPairEntry] = useState('');
+  const [pairMessage, setPairMessage] = useState('');
+  const [pairBusy, setPairBusy] = useState(false);
   const [dailyVerse, setDailyVerse] = useState<DailyVerse | null>(null);
   const [dailyVerseError, setDailyVerseError] = useState('');
   const [refreshingVerse, setRefreshingVerse] = useState(false);
-  const googleWebClientId = String(Constants.expoConfig?.extra?.googleWebClientId ?? '').trim();
-  const googleIosClientId = String(Constants.expoConfig?.extra?.googleIosClientId ?? '').trim();
-  const googleAndroidClientId = String(Constants.expoConfig?.extra?.googleAndroidClientId ?? '').trim();
-  const syncApiUrl = String(Constants.expoConfig?.extra?.syncApiUrl ?? '').trim();
   const rafiqApiUrl = String(Constants.expoConfig?.extra?.rafiqApiUrl ?? '').trim();
   const syncConfigured = isCrossDeviceSyncConfigured();
-  const googleClientId = Platform.select({
-    ios: googleIosClientId,
-    android: googleAndroidClientId,
-    default: googleWebClientId,
-  }) ?? '';
   const supabaseConfigured = isSupabaseSyncConfigured();
-
-  const [request, response, promptAsync] = useIdTokenAuthRequest(
-    {
-      webClientId: googleWebClientId || UNCONFIGURED_GOOGLE_CLIENT_ID,
-      iosClientId: googleIosClientId || UNCONFIGURED_GOOGLE_CLIENT_ID,
-      androidClientId: googleAndroidClientId || UNCONFIGURED_GOOGLE_CLIENT_ID,
-      scopes: ['profile', 'email'],
-      selectAccount: true,
-    },
-    { scheme: 'mishkah' },
-  );
 
   const theme = preferences.theme;
   const palette = PALETTES[theme];
@@ -325,13 +304,14 @@ export default function App() {
           setPreferences(loadedPreferences);
         }
       }),
-      loadAuthSession().then((session) => {
-        if (active && session && !isAuthSessionExpired(session)) {
-          setAuthSession(session);
-        }
+      getSavedPairCode().then((code) => {
+        if (active) setPairCode(code);
       }),
       readSyncState().then((next) => {
         if (active) setSyncState(next);
+      }),
+      readLastSystemReport().then((next) => {
+        if (active) setSystemReport(next);
       }),
     ])
       .catch((error: unknown) => {
@@ -357,106 +337,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (Platform.OS !== 'web' || !supabaseConfigured) return;
-    const supabase = getSupabaseClient();
-    if (!supabase) return;
-    let active = true;
-    const applySession = (session: Session | null) => {
-      if (!active) return;
-      if (!session) {
-        connectedSupabaseUserId.current = null;
-        setAuthSession(null);
-        return;
-      }
-      const name = session.user.user_metadata.full_name;
-      const nextSession = {
-        provider: 'google' as const,
-        idToken: session.access_token,
-        email: session.user.email,
-        name: typeof name === 'string' ? name : undefined,
-        linkedAt: Date.now(),
-        expiresAt: (session.expires_at ?? Math.floor(Date.now() / 1000) + 3600) * 1000,
-      };
-      setAuthSession(nextSession);
-      if (connectedSupabaseUserId.current !== session.user.id) {
-        connectedSupabaseUserId.current = session.user.id;
-        void connectGoogleAccount({ email: nextSession.email, name: nextSession.name })
-          .then(setSyncState)
-          .catch((error: unknown) => {
-            if (active) setAuthMessage(`Account sync could not start: ${friendlyError(error, 'please try again')}`);
-          });
-      }
-    };
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      applySession(session);
-    });
-    void supabase.auth.getSession().then(({ data, error }) => {
-      if (error) throw error;
-      applySession(data.session);
-    }).catch((error: unknown) => {
-      if (active) setAuthMessage(`Google sign-in status could not be checked: ${friendlyError(error, 'please reload')}`);
-    });
-    return () => {
-      active = false;
-      subscription.unsubscribe();
-    };
-  }, [supabaseConfigured]);
-
-  useEffect(() => {
     if (appState !== 'active') {
       return;
     }
     const interval = setInterval(() => setNow(new Date()), 30_000);
     return () => clearInterval(interval);
   }, [appState]);
-
-  useEffect(() => {
-    if (response?.type === 'success') {
-      const idToken = response.params.id_token || response.authentication?.idToken;
-      if (!idToken) {
-        setAuthLoading(false);
-        setAuthMessage('Google sign-in completed without an ID token. Please try again.');
-        return;
-      }
-      const session = {
-        provider: 'google' as const,
-        idToken,
-        accessToken: response.authentication?.accessToken,
-        name: 'Google account',
-        linkedAt: Date.now(),
-        expiresAt: Date.now() + (response.authentication?.expiresIn ?? 3600) * 1000,
-      };
-      void (async () => {
-        try {
-          await saveAuthSession(session);
-          const next = await connectGoogleAccount({ name: session.name });
-          setAuthSession(session);
-          setSyncState(next);
-          if (isSupabaseSyncConfigured()) {
-            try {
-              await connectSupabaseGoogleAccount(session.idToken, session.accessToken);
-              setAuthMessage('Google account connected to Mishkah sync.');
-            } catch (error) {
-              setAuthMessage(`Google sign-in is active locally, but Supabase sync could not connect: ${friendlyError(error, 'check the Supabase Google provider setup')}`);
-            }
-          } else {
-            setAuthMessage(syncApiUrl
-              ? 'Google sign-in is active on this device.'
-              : 'Google sign-in is active locally. Configure a sync service to sync your data.');
-          }
-        } catch (error) {
-          setAuthMessage(`Google sign-in could not be saved: ${friendlyError(error, 'secure storage is unavailable')}`);
-        } finally {
-          setAuthLoading(false);
-        }
-      })();
-    }
-
-    if (response?.type === 'error') {
-      setAuthLoading(false);
-      setAuthMessage('Google sign-in could not be completed.');
-    }
-  }, [response]);
 
   useEffect(() => {
     if (
@@ -525,7 +411,8 @@ export default function App() {
   const refreshDailyVerse = useCallback(async (forceRefresh = false) => {
     setRefreshingVerse(true);
     try {
-      setDailyVerse(await getDailyVerse(new Date(), forceRefresh));
+      const pairedAyah = await readPairedHighlight(new Date());
+      setDailyVerse(await getDailyVerse(new Date(), forceRefresh, pairedAyah));
       setDailyVerseError('');
     } catch (error) {
       setDailyVerseError(friendlyError(error, 'The verse of the day could not be loaded.'));
@@ -537,6 +424,30 @@ export default function App() {
   useEffect(() => {
     if (isReady) void refreshDailyVerse(false);
   }, [isReady, localDate, refreshDailyVerse]);
+
+  useEffect(() => {
+    if (!isReady || appState !== 'active' || !pairCode || !supabaseConfigured) return;
+    let active = true;
+    const refresh = () => {
+      void syncPairedData(new Date())
+        .then(async ({ state }) => {
+          if (!active) return;
+          setSyncState(state);
+          await refreshDailyVerse(false);
+        })
+        .catch((error: unknown) => {
+          if (active) {
+            setPairMessage(`Paired sync could not refresh: ${friendlyError(error, 'please try again')}`);
+          }
+        });
+    };
+    refresh();
+    const interval = setInterval(refresh, 60_000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [appState, isReady, pairCode, refreshDailyVerse, supabaseConfigured]);
   const prayerTimes = city
     ? getPrayerTimes(city, now, preferences.calculationMethod)
     : undefined;
@@ -714,69 +625,72 @@ export default function App() {
     }
   };
 
-  const handleGoogleSignIn = async () => {
-    if (Platform.OS === 'web') {
-      if (!supabaseConfigured) {
-        setAuthMessage('Google sign-in on web needs EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY, with Google enabled in that Supabase project.');
-        return;
-      }
-      setAuthLoading(true);
-      setAuthMessage('');
-      try {
-        await startSupabaseGoogleSignIn();
-      } catch (error) {
-        setAuthMessage(`Google sign-in failed: ${friendlyError(error, 'check the Supabase Google provider and redirect URL settings')}`);
-      } finally {
-        setAuthLoading(false);
-      }
-      return;
-    }
-
-    if (!request || !googleClientId) {
-      const requiredVariable = Platform.select({
-        ios: 'EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID',
-        android: 'EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID',
-        default: 'EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID',
-      });
-      setAuthMessage(`Configure ${requiredVariable} before enabling Google sign-in.`);
-      return;
-    }
-
-    setAuthLoading(true);
-    setAuthMessage('');
+  const createPairing = async () => {
+    setPairBusy(true);
+    setPairMessage('');
     try {
-      const result = await promptAsync();
-      if (result.type === 'cancel' || result.type === 'dismiss') {
-        setAuthMessage('Google sign-in was cancelled.');
-      } else if (result.type === 'error') {
-        setAuthMessage('Google authentication could not be completed.');
-      }
+      const code = await createPairCode();
+      setPairCode(code);
+      const next = await linkPairedAccount();
+      setSyncState(next);
+      const synced = await syncPairedData(new Date());
+      setSyncState(synced.state);
+      await refreshDailyVerse(false);
+      setPairMessage('Pairing code created. Enter it in Furqan to link the apps.');
     } catch (error) {
-      setAuthMessage(`Google sign-in failed: ${friendlyError(error, 'please try again')}`);
+      setPairMessage(friendlyError(error, 'Could not create a pairing code.'));
     } finally {
-      setAuthLoading(false);
+      setPairBusy(false);
     }
   };
 
-  const handleGoogleSignOut = async () => {
+  const joinPairing = async () => {
+    setPairBusy(true);
+    setPairMessage('');
     try {
-      await disconnectSupabaseAccount();
+      const code = await joinPairCode(pairEntry);
+      setPairCode(code);
+      setPairEntry('');
+      const next = await linkPairedAccount();
+      setSyncState(next);
+      const synced = await syncPairedData(new Date());
+      setSyncState(synced.state);
+      await refreshDailyVerse(false);
+      setPairMessage('Furqan is paired. Streak and the verse of the day now stay in sync.');
     } catch (error) {
-      setAuthMessage(`Supabase sign-out could not complete: ${friendlyError(error, 'please retry')}`);
-      return;
+      setPairMessage(friendlyError(error, 'Could not join that pairing.'));
+    } finally {
+      setPairBusy(false);
     }
-    await clearAuthSession();
-    const next = await disconnectGoogleAccount();
-    setAuthSession(null);
+  };
+
+  const unpairApps = async () => {
+    await forgetPairCode();
+    const next = await unlinkPairedAccount();
+    setPairCode(null);
     setSyncState(next);
-    setAuthMessage('Google account disconnected.');
+    setPairMessage('Pairing removed from Mishkah. Your local data stays on this device.');
+  };
+
+  const runSystemReport = async () => {
+    setReportBusy(true);
+    try {
+      setSystemReport(await createSystemReport());
+    } catch (error) {
+      setNotice(friendlyError(error, 'The weekly system report could not run.'));
+    } finally {
+      setReportBusy(false);
+    }
   };
 
   const handleSyncNow = async () => {
     try {
-      const next = await flushSyncQueue(authSession?.idToken ?? '');
+      const next = await flushSyncQueue();
       setSyncState(next);
-      setNotice(next.queuedCount ? `${next.queuedCount} updates are still waiting for sync.` : 'Your queued updates are synced.');
+      const synced = await syncPairedData(new Date());
+      setSyncState(synced.state);
+      await refreshDailyVerse(false);
+      setNotice(synced.state.status === 'synced' ? 'Mishkah and Furqan are in sync.' : 'Your queued updates are synced.');
     } catch (error) {
       setNotice(friendlyError(error, 'Sync could not complete. Your updates remain queued on this device.'));
       const latest = await readSyncState();
@@ -1669,8 +1583,8 @@ export default function App() {
               <Pressable accessibilityRole="button" onPress={() => setProfileModalVisible(true)} style={styles.moreAccountRow}>
                 <View style={styles.moreIcon}><Text style={styles.moreIconText}>◎</Text></View>
                 <View style={styles.moreRowCopy}>
-                  <Text style={styles.moreRowTitle}>Account & sync</Text>
-                  <Text style={styles.moreRowDescription}>{authSession ? 'Google sign-in active' : 'Sign in or continue locally'}</Text>
+                  <Text style={styles.moreRowTitle}>Pairing & sync</Text>
+                  <Text style={styles.moreRowDescription}>{pairCode ? 'Paired with Furqan' : 'Continue locally or pair with Furqan'}</Text>
                 </View>
                 <Text style={styles.moreArrow}>›</Text>
               </Pressable>
@@ -1848,36 +1762,19 @@ export default function App() {
                 </Text>
               </View>
               <View style={styles.settingsCard}>
-                <Text style={styles.settingGroupTitle}>Account & sync</Text>
+                <Text style={styles.settingGroupTitle}>Pair with Furqan</Text>
                 <Text style={styles.settingDescription}>
                   {syncConfigured
-                    ? 'Connect a Google account to sync streaks and unlock guidance features across devices.'
-                    : 'Google account linking is available. Cross-device sync is not configured for this build.'}
+                    ? 'Pair once with Furqan to keep your streak, memorized ayahs, and the Qur’an verse of the day in sync. No account sign-in is needed.'
+                    : 'Cross-app sync is not configured for this build. Your data stays on this device.'}
                 </Text>
                 <View style={styles.syncCard}>
                   <Text style={styles.syncLabel}>Status</Text>
-                  <Text style={styles.syncValue}>
-                    {!authSession && syncState?.linkedAccount.linked
-                      ? 'Sign-in required'
-                        : authSession
-                          ? 'Google sign-in active'
-                          : 'Local-only mode'}
-                  </Text>
+                  <Text style={styles.syncValue}>{pairCode ? 'Paired with Furqan' : 'Local-only mode'}</Text>
                   <Text style={styles.syncMeta}>{syncState?.status ?? 'idle'} · {syncState?.queuedCount ?? 0} queued updates</Text>
-                  {authSession && !syncConfigured ? (
-                    <Text style={styles.syncMeta}>Cross-device sync is unavailable in this build. Your data stays on this device.</Text>
-                  ) : null}
-                  {authSession ? (
-                    <Text style={styles.syncMeta}>Signed in as {authSession.email ?? authSession.name ?? 'Google user'}</Text>
-                  ) : null}
+                  {pairCode ? <Text style={styles.syncMeta}>Pairing code {pairCode}</Text> : null}
                 </View>
-                {!authSession ? (
-                  <GoogleSignInButton
-                    label="Sign in with Google"
-                    loading={authLoading}
-                    onPress={() => void handleGoogleSignIn()}
-                  />
-                ) : (
+                {pairCode ? (
                   <View style={styles.inlineActions}>
                     <ActionButton
                       label={syncConfigured ? 'Sync now' : 'Sync unavailable'}
@@ -1887,14 +1784,71 @@ export default function App() {
                       disabled={!syncConfigured}
                     />
                     <ActionButton
-                      label="Sign out"
-                      onPress={() => void handleGoogleSignOut()}
+                      label="Unpair"
+                      onPress={() => void unpairApps()}
                       palette={palette}
                       styles={styles}
                     />
                   </View>
+                ) : (
+                  <>
+                    <ActionButton
+                      label={pairBusy ? 'Working…' : 'Create pairing code'}
+                      onPress={() => void createPairing()}
+                      palette={palette}
+                      styles={styles}
+                      disabled={pairBusy || !supabaseConfigured}
+                      busy={pairBusy}
+                    />
+                    <TextInput
+                      accessibilityLabel="Furqan pairing code"
+                      autoCapitalize="characters"
+                      autoCorrect={false}
+                      onChangeText={setPairEntry}
+                      placeholder="Enter Furqan’s 20-character code"
+                      placeholderTextColor={palette.muted}
+                      style={styles.guideInput}
+                      value={pairEntry}
+                    />
+                    <ActionButton
+                      label="Pair with Furqan"
+                      onPress={() => void joinPairing()}
+                      palette={palette}
+                      styles={styles}
+                      disabled={pairBusy || !pairEntry.trim() || !supabaseConfigured}
+                    />
+                  </>
                 )}
-                {authMessage ? <Text style={styles.healthMessage}>{authMessage}</Text> : null}
+                {pairMessage ? <Text style={styles.healthMessage}>{pairMessage}</Text> : null}
+              </View>
+              <View style={styles.settingsCard}>
+                <Text style={styles.settingGroupTitle}>Weekly system report</Text>
+                <Text style={styles.settingDescription}>
+                  A plain-language check of Mishkah’s storage, settings, pairing, and today’s verse. The newest report stays on this device so you can reread it any time.
+                </Text>
+                <ActionButton
+                  label={reportBusy ? 'Running report…' : 'Run weekly report now'}
+                  onPress={() => void runSystemReport()}
+                  palette={palette}
+                  styles={styles}
+                  disabled={reportBusy}
+                  busy={reportBusy}
+                />
+                {systemReport ? (
+                  <View style={styles.syncCard}>
+                    <Text style={styles.syncLabel}>LATEST REPORT</Text>
+                    <Text style={styles.syncMeta}>
+                      {new Date(systemReport.generatedAt).toLocaleString()}
+                    </Text>
+                    {systemReport.items.map((item) => (
+                      <Text key={item.label} style={styles.syncMeta}>
+                        {item.ok ? '✓' : '✗'} {item.label} — {item.detail}
+                      </Text>
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={styles.privacyNote}>No report has been generated on this device yet.</Text>
+                )}
               </View>
               <View style={styles.settingsCard}>
                 <Text style={styles.settingGroupTitle}>A private health check</Text>
@@ -2048,22 +2002,16 @@ export default function App() {
               </Pressable>
             </View>
             <View style={styles.syncCard}>
-              <Text style={styles.syncLabel}>ACCOUNT STATUS</Text>
-              <Text style={styles.syncValue}>{authSession ? 'Google sign-in active' : 'Local-only mode'}</Text>
+              <Text style={styles.syncLabel}>PAIRING STATUS</Text>
+              <Text style={styles.syncValue}>{pairCode ? 'Paired with Furqan' : 'Local-only mode'}</Text>
               <Text style={styles.syncMeta}>
-                {authSession?.email ?? authSession?.name ?? 'Your settings remain on this device.'}
+                {pairCode ? `Pairing code ${pairCode}` : 'Your settings remain on this device.'}
               </Text>
-              {authSession && !syncConfigured ? (
-                <Text style={styles.syncMeta}>Cross-device sync is unavailable in this build. Your data stays on this device.</Text>
+              {!syncConfigured ? (
+                <Text style={styles.syncMeta}>Cross-app sync is unavailable in this build. Your data stays on this device.</Text>
               ) : null}
             </View>
-            {!authSession ? (
-              <GoogleSignInButton
-                label="Sign in with Google"
-                loading={authLoading}
-                onPress={() => void handleGoogleSignIn()}
-              />
-            ) : (
+            {pairCode ? (
               <View style={styles.inlineActions}>
                 <ActionButton
                   label={syncConfigured ? 'Sync now' : 'Sync unavailable'}
@@ -2073,14 +2021,42 @@ export default function App() {
                   disabled={!syncConfigured}
                 />
                 <ActionButton
-                  label="Sign out"
-                  onPress={() => void handleGoogleSignOut()}
+                  label="Unpair"
+                  onPress={() => void unpairApps()}
                   palette={palette}
                   styles={styles}
                 />
               </View>
+            ) : (
+              <>
+                <ActionButton
+                  label={pairBusy ? 'Working…' : 'Create pairing code'}
+                  onPress={() => void createPairing()}
+                  palette={palette}
+                  styles={styles}
+                  disabled={pairBusy || !supabaseConfigured}
+                  busy={pairBusy}
+                />
+                <TextInput
+                  accessibilityLabel="Furqan pairing code"
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  onChangeText={setPairEntry}
+                  placeholder="Enter Furqan’s 20-character code"
+                  placeholderTextColor={palette.muted}
+                  style={styles.guideInput}
+                  value={pairEntry}
+                />
+                <ActionButton
+                  label="Pair with Furqan"
+                  onPress={() => void joinPairing()}
+                  palette={palette}
+                  styles={styles}
+                  disabled={pairBusy || !pairEntry.trim() || !supabaseConfigured}
+                />
+              </>
             )}
-            {authMessage ? <Text style={styles.healthMessage}>{authMessage}</Text> : null}
+            {pairMessage ? <Text style={styles.healthMessage}>{pairMessage}</Text> : null}
             <Pressable
               accessibilityRole="button"
               onPress={() => {
@@ -2151,11 +2127,11 @@ export default function App() {
               })}
             </View>
             <ActionButton
-              label={authSession ? 'Open account & sync' : 'Open account'}
+              label="Open pairing & sync"
               onPress={() => {
                 setStreakModalVisible(false);
                 setScreen('More');
-                if (!authSession) setProfileModalVisible(true);
+                if (!pairCode) setProfileModalVisible(true);
               }}
               palette={palette}
               styles={styles}

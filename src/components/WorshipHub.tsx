@@ -1,5 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import * as Sharing from 'expo-sharing';
+import Constants from 'expo-constants';
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import ViewShot, { type ViewShotRef } from 'react-native-view-shot';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -80,6 +81,23 @@ function categoryLabel(category: string): string {
   return category === 'all' ? 'All' : category[0].toUpperCase() + category.slice(1);
 }
 
+const FURQAN_BASE_URL = String(Constants.expoConfig?.extra?.furqanBaseUrl ?? '')
+  .trim()
+  .replace(/\/$/, '');
+
+/**
+ * Every Qur’an reference opens the full surah in Furqan, so the reader sees the
+ * exact text and chapter Mishkah pointed at.
+ */
+function furqanLinkFor(url: string): string | null {
+  if (!FURQAN_BASE_URL) return null;
+  const match = /^https?:\/\/(?:www\.)?quran\.com\/(\d{1,3})(?:\/(\d{1,3})(?:-\d{1,3})?)?\/?$/.exec(url);
+  if (!match) return null;
+  const surah = Number(match[1]);
+  const ayah = match[2] ? Number(match[2]) : null;
+  return `${FURQAN_BASE_URL}/surah/${surah}${ayah ? `?ayah=${ayah}` : ''}`;
+}
+
 function makeShareSvg(entry: HadithEntry): string {
   const lines: string[] = [];
   const words = entry.summary.split(/\s+/);
@@ -155,7 +173,7 @@ export function WorshipHub({ preferences, palette, date, initialTab = 'Hadith', 
 
   const openArchiveSource = async (url: string) => {
     try {
-      await Linking.openURL(url);
+      await Linking.openURL(furqanLinkFor(url) ?? url);
     } catch (error) {
       onNotice(`Source link could not be opened: ${error instanceof Error ? error.message : 'unknown error'}`);
     }

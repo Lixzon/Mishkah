@@ -114,12 +114,22 @@ async function fetchJson(url: string): Promise<unknown> {
   return response.json();
 }
 
-export async function getDailyVerse(date = new Date(), forceRefresh = false): Promise<DailyVerse> {
+export async function getDailyVerse(
+  date = new Date(),
+  forceRefresh = false,
+  pairedGlobalAyah: number | null = null,
+): Promise<DailyVerse> {
   const dateKey = localDateKey(date);
   const storageKey = `${STORAGE_PREFIX}:${dateKey}`;
+  const requestedAyah = pairedGlobalAyah !== null &&
+    Number.isInteger(pairedGlobalAyah) &&
+    pairedGlobalAyah >= 1 &&
+    pairedGlobalAyah <= TOTAL_AYAH_COUNT
+    ? pairedGlobalAyah
+    : null;
   if (!forceRefresh) {
     const cached = cachedVerse(await AsyncStorage.getItem(storageKey), dateKey);
-    if (cached) return cached;
+    if (cached && (requestedAyah === null || cached.globalAyah === requestedAyah)) return cached;
   }
 
   const baseUrl = String(Constants.expoConfig?.extra?.furqanBaseUrl ?? '').trim();
@@ -130,7 +140,7 @@ export async function getDailyVerse(date = new Date(), forceRefresh = false): Pr
     throw new Error('Furqan returned invalid surah metadata.');
   }
 
-  const globalAyah = globalAyahForDate(date);
+  const globalAyah = requestedAyah ?? globalAyahForDate(date);
   let cumulativeAyahs = 0;
   const selectedSurah = metadataValue.find((surah) => {
     cumulativeAyahs += surah.numberOfAyahs;

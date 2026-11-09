@@ -42,10 +42,6 @@ module.exports = ({ config }) => {
     },
     extra: {
       ...extra,
-      googleWebClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? '',
-      googleIosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ?? '',
-      googleAndroidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ?? '',
-      syncApiUrl: process.env.EXPO_PUBLIC_SYNC_API_URL ?? '',
       rafiqApiUrl: process.env.EXPO_PUBLIC_RAFIQ_API_URL ?? '',
       supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL ?? '',
       supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '',

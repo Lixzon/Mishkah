@@ -1,9 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Constants from 'expo-constants';
 import { computeUnlockedFeatures } from '../domain/streakRewards';
 import {
+  getSavedPairCode,
   isSupabaseSyncConfigured,
-  upsertSharedRecord,
+  upsertPairedRecords,
 } from './cloudSync';
 
 export { computeUnlockedFeatures } from '../domain/streakRewards';
@@ -19,9 +19,7 @@ export interface SyncEnvelope<T> {
 }
 
 export interface LinkedAccountState {
-  provider: 'google' | 'local';
-  email?: string;
-  name?: string;
+  provider: 'pair' | 'local';
   linked: boolean;
   lastSyncedAt?: number;
 }
@@ -38,10 +36,9 @@ export interface SyncState {
 const STORAGE_KEY = 'mishkah.sync.v1';
 const QUEUE_KEY = 'mishkah.sync.queue.v1';
 const DEVICE_ID = `mishkah-${Math.random().toString(36).slice(2, 10)}`;
-const SYNC_API_URL = String(Constants.expoConfig?.extra?.syncApiUrl ?? '').trim();
 
 export function isCrossDeviceSyncConfigured(): boolean {
-  return Boolean(SYNC_API_URL || isSupabaseSyncConfigured());
+  return isSupabaseSyncConfigured();
 }
 
 export function getDeviceId(): string {
@@ -56,9 +53,7 @@ export async function readSyncState(): Promise<SyncState> {
     lastSyncedAt: parsed.lastSyncedAt,
     queuedCount: parsed.queuedCount ?? 0,
     linkedAccount: {
-      provider: parsed.linkedAccount?.provider ?? 'local',
-      email: parsed.linkedAccount?.email,
-      name: parsed.linkedAccount?.name,
+      provider: parsed.linkedAccount?.provider === 'pair' ? 'pair' : 'local',
       linked: Boolean(parsed.linkedAccount?.linked),
       lastSyncedAt: parsed.linkedAccount?.lastSyncedAt,
     },
@@ -104,17 +99,18 @@ export async function readQueue(): Promise<SyncEnvelope<unknown>[]> {
   }
 }
 
-export async function flushSyncQueue(idToken: string): Promise<SyncState> {
+export async function flushSyncQueue(): Promise<SyncState> {
   const queued = await readQueue();
+  const pairCode = await getSavedPairCode();
   if (!queued.length) {
     return readSyncState();
   }
 
-  if (!SYNC_API_URL && !isSupabaseSyncConfigured()) {
+  if (!isSupabaseSyncConfigured()) {
     throw new Error('Cross-device sync is not configured for this build. Your updates remain queued on this device.');
   }
-  if (!isSupabaseSyncConfigured() && !idToken) {
-    throw new Error('Sign in again before syncing your queued updates.');
+  if (!pairCode) {
+    throw new Error('Pair Mishkah with Furqan before syncing your queued updates.');
   }
 
   await writeSyncState({ status: 'syncing', queuedCount: queued.length });
@@ -146,9 +142,8 @@ export async function flushSyncQueue(idToken: string): Promise<SyncState> {
         });
       }
 
-      for (const [recordKey, payload] of records) {
-        await upsertSharedRecord(recordKey, payload);
-      }
+      const batch = [...records].map(([record_key, payload]) => ({ record_key, payload }));
+      await upsertPairedRecords(pairCode, batch);
 
       const queuedIds = new Set(queued.map((event) => event.id));
       const remaining = (await readQueue()).filter((event) => !queuedIds.has(event.id));
@@ -167,58 +162,6 @@ export async function flushSyncQueue(idToken: string): Promise<SyncState> {
       throw error;
     }
   }
-
-  let response: Response;
-  try {
-    response = await fetch(SYNC_API_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${idToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ deviceId: getDeviceId(), events: queued }),
-    });
-  } catch {
-    await writeSyncState({ status: 'queued', queuedCount: (await readQueue()).length });
-    throw new Error('The sync service could not be reached. Your updates remain queued on this device.');
-  }
-
-  if (!response.ok) {
-    await writeSyncState({ status: 'queued', queuedCount: (await readQueue()).length });
-    throw new Error(`The sync service rejected the update (HTTP ${response.status}). Your updates remain queued.`);
-  }
-
-  let acceptedIds: string[];
-  try {
-    const acknowledgement: unknown = await response.json();
-    if (
-      typeof acknowledgement !== 'object' ||
-      acknowledgement === null ||
-      !('acceptedIds' in acknowledgement) ||
-      !Array.isArray(acknowledgement.acceptedIds) ||
-      !acknowledgement.acceptedIds.every((id) => typeof id === 'string')
-    ) {
-      throw new Error('Invalid sync acknowledgement');
-    }
-    acceptedIds = acknowledgement.acceptedIds;
-  } catch {
-    await writeSyncState({ status: 'queued', queuedCount: (await readQueue()).length });
-    throw new Error('The sync service returned an invalid acknowledgement. Your updates remain queued.');
-  }
-
-  const acceptedIdSet = new Set(acceptedIds);
-  const remaining = (await readQueue()).filter((event) => !acceptedIdSet.has(event.id));
-  const syncedAt = acceptedIds.length > 0 ? Date.now() : undefined;
-  const current = await readSyncState();
-  await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(remaining));
-  await writeSyncState({
-    status: remaining.length ? 'queued' : 'synced',
-    queuedCount: remaining.length,
-    ...(syncedAt ? { lastSyncedAt: syncedAt } : {}),
-    linkedAccount: syncedAt
-      ? { ...current.linkedAccount, lastSyncedAt: syncedAt }
-      : current.linkedAccount,
-  });
 
   return readSyncState();
 }
@@ -248,7 +191,7 @@ export async function syncEngagement(streak: number): Promise<SyncState> {
   return readSyncState();
 }
 
-export async function connectGoogleAccount(account: { email?: string; name?: string }): Promise<SyncState> {
+export async function linkPairedAccount(): Promise<SyncState> {
   const current = await readSyncState();
   await queueSyncEvent('account-snapshot', {
     streak: current.streak,
@@ -256,9 +199,7 @@ export async function connectGoogleAccount(account: { email?: string; name?: str
   });
   const queued = await readQueue();
   const linkedAccount = {
-    provider: 'google' as const,
-    email: account.email,
-    name: account.name,
+    provider: 'pair' as const,
     linked: true,
     lastSyncedAt: current.linkedAccount.lastSyncedAt,
   };
@@ -272,7 +213,7 @@ export async function connectGoogleAccount(account: { email?: string; name?: str
   return readSyncState();
 }
 
-export async function disconnectGoogleAccount(): Promise<SyncState> {
+export async function unlinkPairedAccount(): Promise<SyncState> {
   const current = await readSyncState();
   await writeSyncState({
     linkedAccount: { provider: 'local', linked: false },
