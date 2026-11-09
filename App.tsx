@@ -76,8 +76,10 @@ import {
   createPairCode,
   forgetPairCode,
   getSavedPairCode,
+  isPairingCodeRevokedError,
   isSupabaseSyncConfigured,
   joinPairCode,
+  revokePairCode,
 } from './src/services/cloudSync';
 import {
   flushSyncQueue,
@@ -312,6 +314,7 @@ export default function App() {
   const [pairEntry, setPairEntry] = useState('');
   const [pairMessage, setPairMessage] = useState('');
   const [pairBusy, setPairBusy] = useState(false);
+  const [revokeConfirmVisible, setRevokeConfirmVisible] = useState(false);
   const [dailyVerse, setDailyVerse] = useState<DailyVerse | null>(null);
   const [dailyVerseError, setDailyVerseError] = useState('');
   const [refreshingVerse, setRefreshingVerse] = useState(false);
@@ -472,6 +475,22 @@ export default function App() {
     }
   }, []);
 
+  const handlePairingFailure = useCallback(async (error: unknown, fallback: string) => {
+    if (isPairingCodeRevokedError(error)) {
+      try {
+        await forgetPairCode();
+        const next = await unlinkPairedAccount();
+        setPairCode(null);
+        setSyncState(next);
+        setPairMessage('This pairing was revoked on another device. Shared cloud records were deleted; local data remains.');
+      } catch (cleanupError) {
+        setPairMessage(`The pairing was revoked, but this device could not clear its saved code: ${friendlyError(cleanupError, 'local storage is unavailable')}`);
+      }
+      return;
+    }
+    setPairMessage(`Paired sync could not refresh: ${friendlyError(error, fallback)}`);
+  }, []);
+
   useEffect(() => {
     if (isReady) void refreshDailyVerse(false);
   }, [isReady, localDate, refreshDailyVerse]);
@@ -488,7 +507,7 @@ export default function App() {
         })
         .catch((error: unknown) => {
           if (active) {
-            setPairMessage(`Paired sync could not refresh: ${friendlyError(error, 'please try again')}`);
+            void handlePairingFailure(error, 'please try again');
           }
         });
     };
@@ -498,7 +517,7 @@ export default function App() {
       active = false;
       clearInterval(interval);
     };
-  }, [appState, isReady, pairCode, refreshDailyVerse, supabaseConfigured]);
+  }, [appState, handlePairingFailure, isReady, pairCode, refreshDailyVerse, supabaseConfigured]);
   const prayerTimes = city
     ? getPrayerTimes(city, now, preferences.calculationMethod)
     : undefined;
@@ -715,12 +734,33 @@ export default function App() {
     }
   };
 
-  const unpairApps = async () => {
+  const disconnectThisDevice = async () => {
     await forgetPairCode();
     const next = await unlinkPairedAccount();
     setPairCode(null);
     setSyncState(next);
-    setPairMessage('Pairing removed from Mishkah. Your local data stays on this device.');
+    setPairMessage('This device is disconnected. Other devices with this code remain paired.');
+  };
+
+  const revokePairing = async () => {
+    if (!pairCode) return;
+    setPairBusy(true);
+    try {
+      const revoked = await revokePairCode(pairCode);
+      await forgetPairCode();
+      const next = await unlinkPairedAccount();
+      setPairCode(null);
+      setSyncState(next);
+      setPairMessage(
+        revoked
+          ? 'Pairing revoked everywhere. Shared cloud records were deleted; local data remains on this device.'
+          : 'This pairing was already revoked. Local data remains on this device.',
+      );
+    } catch (error) {
+      setPairMessage(friendlyError(error, 'Could not revoke the app pairing.'));
+    } finally {
+      setPairBusy(false);
+    }
   };
 
   const runSystemReport = async () => {
@@ -743,6 +783,10 @@ export default function App() {
       await refreshDailyVerse(false);
       setNotice(synced.state.status === 'synced' ? 'Mishkah and Furqan are in sync.' : 'Your queued updates are synced.');
     } catch (error) {
+      if (isPairingCodeRevokedError(error)) {
+        await handlePairingFailure(error, 'The pairing was revoked.');
+        return;
+      }
       setNotice(friendlyError(error, 'Sync could not complete. Your updates remain queued on this device.'));
       const latest = await readSyncState();
       setSyncState(latest);
@@ -1835,19 +1879,28 @@ export default function App() {
                   ) : null}
                 </View>
                 {!syncConfigured ? null : pairCode ? (
-                  <View style={styles.inlineActions}>
+                  <View style={styles.pairActions}>
                     <ActionButton
                       label={syncConfigured ? 'Sync now' : 'Sync unavailable'}
                       onPress={() => void handleSyncNow()}
                       palette={palette}
                       styles={styles}
-                      disabled={!syncConfigured}
+                      disabled={!syncConfigured || pairBusy}
                     />
                     <ActionButton
-                      label="Unpair"
-                      onPress={() => void unpairApps()}
+                      label="Disconnect this device"
+                      onPress={() => void disconnectThisDevice()}
                       palette={palette}
                       styles={styles}
+                      disabled={pairBusy}
+                    />
+                    <ActionButton
+                      label="Revoke pairing everywhere"
+                      onPress={() => setRevokeConfirmVisible(true)}
+                      palette={palette}
+                      styles={styles}
+                      disabled={pairBusy}
+                      danger
                     />
                   </View>
                 ) : (
@@ -2075,19 +2128,28 @@ export default function App() {
               ) : null}
             </View>
             {!syncConfigured ? null : pairCode ? (
-              <View style={styles.inlineActions}>
+              <View style={styles.pairActions}>
                 <ActionButton
                   label={syncConfigured ? 'Sync now' : 'Sync unavailable'}
                   onPress={() => void handleSyncNow()}
                   palette={palette}
                   styles={styles}
-                  disabled={!syncConfigured}
+                  disabled={!syncConfigured || pairBusy}
                 />
                 <ActionButton
-                  label="Unpair"
-                  onPress={() => void unpairApps()}
+                  label="Disconnect this device"
+                  onPress={() => void disconnectThisDevice()}
                   palette={palette}
                   styles={styles}
+                  disabled={pairBusy}
+                />
+                <ActionButton
+                  label="Revoke pairing everywhere"
+                  onPress={() => setRevokeConfirmVisible(true)}
+                  palette={palette}
+                  styles={styles}
+                  disabled={pairBusy}
+                  danger
                 />
               </View>
             ) : (
@@ -2363,6 +2425,46 @@ export default function App() {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setRevokeConfirmVisible(false)}
+        transparent
+        visible={revokeConfirmVisible}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalIcon}>
+              <Text style={styles.modalIconText}>!</Text>
+            </View>
+            <Text style={styles.modalTitle}>Revoke pairing everywhere?</Text>
+            <Text style={styles.modalMessage}>
+              Every connected device will be disconnected and the shared cloud records will be deleted. This device keeps its local data.
+            </Text>
+            <View style={styles.modalActions}>
+              <Pressable
+                accessibilityRole="button"
+                disabled={pairBusy}
+                onPress={() => setRevokeConfirmVisible(false)}
+                style={[styles.modalSecondaryButton, pairBusy && styles.disabledButton]}
+              >
+                <Text style={styles.modalSecondaryText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                disabled={pairBusy}
+                onPress={() => {
+                  setRevokeConfirmVisible(false);
+                  void revokePairing();
+                }}
+                style={[styles.modalDangerButton, pairBusy && styles.disabledButton]}
+              >
+                <Text style={styles.modalDangerText}>Revoke everywhere</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -2407,6 +2509,7 @@ function ActionButton({
   styles,
   disabled = false,
   busy = false,
+  danger = false,
 }: {
   label: string;
   onPress: () => void;
@@ -2414,16 +2517,17 @@ function ActionButton({
   styles: ReturnType<typeof createStyles>;
   disabled?: boolean;
   busy?: boolean;
+  danger?: boolean;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
       disabled={disabled}
       onPress={onPress}
-      style={[styles.actionButton, disabled && styles.disabledButton]}
+      style={[styles.actionButton, danger && styles.dangerActionButton, disabled && styles.disabledButton]}
     >
       {busy ? <ActivityIndicator color={palette.accentInk} size="small" /> : null}
-      <Text style={styles.actionButtonText}>{label}</Text>
+      <Text style={[styles.actionButtonText, danger && styles.dangerActionButtonText]}>{label}</Text>
     </Pressable>
   );
 }
@@ -2943,6 +3047,12 @@ function createStyles(colors: Palette) {
     },
     disabledButton: { opacity: 0.65 },
     actionButtonText: { color: colors.accentInk, fontSize: 12, fontWeight: '700' },
+    dangerActionButton: {
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.danger,
+    },
+    dangerActionButtonText: { color: colors.danger },
     answerCard: { backgroundColor: colors.surfaceRaised, borderRadius: 15, padding: 14, marginTop: 14 },
     answerTitle: { color: colors.ink, fontSize: 13, fontWeight: '600' },
     answerText: { color: colors.muted, fontSize: 12, lineHeight: 19, marginTop: 7 },
@@ -3132,6 +3242,7 @@ function createStyles(colors: Palette) {
       gap: 8,
       marginTop: 12,
     },
+    pairActions: { marginTop: 2 },
     choiceRow: { flexDirection: 'row', gap: 9, marginTop: 13 },
     choice: {
       flex: 1,
@@ -3212,5 +3323,26 @@ function createStyles(colors: Palette) {
       marginTop: 8,
       marginBottom: 10,
     },
+    modalActions: { width: '100%', flexDirection: 'row', gap: 10, marginTop: 8 },
+    modalSecondaryButton: {
+      flex: 1,
+      minHeight: 43,
+      borderRadius: 13,
+      borderWidth: 1,
+      borderColor: colors.line,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    modalSecondaryText: { color: colors.ink, fontSize: 12, fontWeight: '600' },
+    modalDangerButton: {
+      flex: 1,
+      minHeight: 43,
+      borderRadius: 13,
+      borderWidth: 1,
+      borderColor: colors.danger,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    modalDangerText: { color: colors.danger, fontSize: 12, fontWeight: '700' },
   });
 }

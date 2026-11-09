@@ -34,6 +34,21 @@ const secureStorage = {
 
 let client: SupabaseClient | null = null;
 
+export class PairingCodeRevokedError extends Error {
+  constructor() {
+    super('This pairing was revoked on another device.');
+    this.name = 'PairingCodeRevokedError';
+  }
+}
+
+export function isPairingCodeRevokedError(error: unknown): error is PairingCodeRevokedError {
+  return error instanceof PairingCodeRevokedError;
+}
+
+function isPairingCodeNotFound(message: string): boolean {
+  return /pairing code (?:revoked or )?not found/i.test(message);
+}
+
 export function isSupabaseSyncConfigured(): boolean {
   return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 }
@@ -96,11 +111,24 @@ export async function forgetPairCode(): Promise<void> {
   await savePairCode(null);
 }
 
+export async function revokePairCode(value: string): Promise<boolean> {
+  const supabase = getSupabaseClient();
+  if (!supabase) throw new Error('Pairing sync is not configured for this build.');
+  const code = validatePairCode(value);
+  const { data, error } = await supabase.rpc('revoke_lixzon_sync_pair', { p_code: code });
+  if (error) throw new Error(`Could not revoke the app pairing: ${error.message}`);
+  if (typeof data !== 'boolean') throw new Error('The sync service returned an invalid revocation response.');
+  return data;
+}
+
 export async function readPairedRecords(code: string): Promise<SharedSyncRecord[]> {
   const supabase = getSupabaseClient();
   if (!supabase) throw new Error('Pairing sync is not configured for this build.');
   const { data, error } = await supabase.rpc('read_lixzon_paired_records', { p_code: code });
-  if (error) throw new Error(`Could not load paired app data: ${error.message}`);
+  if (error) {
+    if (isPairingCodeNotFound(error.message)) throw new PairingCodeRevokedError();
+    throw new Error(`Could not load paired app data: ${error.message}`);
+  }
   if (!Array.isArray(data)) throw new Error('The sync service returned invalid paired data.');
   return data.filter((row): row is SharedSyncRecord =>
     typeof row === 'object' &&
@@ -124,6 +152,8 @@ export async function upsertPairedRecords(
     p_code: code,
     p_records: records,
   });
-  if (error) throw new Error(`Could not sync paired app data: ${error.message}`);
+  if (error) {
+    if (isPairingCodeNotFound(error.message)) throw new PairingCodeRevokedError();
+    throw new Error(`Could not sync paired app data: ${error.message}`);
+  }
 }
-
