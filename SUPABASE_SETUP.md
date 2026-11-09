@@ -10,10 +10,11 @@ For the GitHub Pages deployment, add repository Actions secrets named `SUPABASE_
 
 Enable GitHub Pages once in the repository: Settings -> Pages -> Build and deployment -> Source -> GitHub Actions. The deployment workflow cannot enable Pages itself; GitHub currently rejects that operation from the workflow token. After Pages and the secrets are configured, push or rerun the `Deploy web` workflow.
 
-Apply both migrations from the Furqan repository to the same project:
+Apply the pairing migration from the Furqan repository to the shared project:
 
-- `supabase/migrations/20261108150000_lixzon_sync_records.sql`
 - `supabase/migrations/20261109130000_lixzon_pair_sync.sql`
+
+The earlier `20261108150000_lixzon_sync_records.sql` migration belongs to the old authenticated-record sync path and is not required for pairing. If it is already installed, leave it in place; pairing uses its separate `lixzon_sync_pairs` and `lixzon_paired_sync_records` tables.
 
 No Auth provider or redirect URL is required. Without these settings, Mishkah stays local-only and never claims that sync is active.
 
