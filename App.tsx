@@ -66,7 +66,6 @@ import { schedulePrayerReminders } from './src/services/notifications';
 import { VoiceSearchButton } from './src/components/VoiceSearchButton';
 import { WorshipHub, type WorshipTab } from './src/components/WorshipHub';
 import { GuidanceHub } from './src/components/GuidanceHub';
-import { StoriesHub } from './src/components/StoriesHub';
 import { HISN_AL_MUSLIM_DUAS } from './src/domain/adhkar';
 import { getDailyHadith } from './src/domain/hadith';
 import { resetPostSalahCounts } from './src/domain/tasbeeh';
@@ -96,12 +95,12 @@ import {
   type SystemReport,
 } from './src/services/systemReport';
 
-type Screen = 'Prayer' | 'Global' | 'Fasting' | 'Guide' | 'More' | 'Worship' | 'Settings' | 'Stories';
-type PrimaryScreen = 'Prayer' | 'Worship' | 'Stories' | 'Guide' | 'More';
+type Screen = 'Prayer' | 'Global' | 'Fasting' | 'Guide' | 'More' | 'Worship' | 'Settings' | 'Community';
+type PrimaryScreen = 'Prayer' | 'Worship' | 'Community' | 'Guide' | 'More';
 const PRIMARY_TABS: readonly { screen: PrimaryScreen; label: string; icon: string }[] = [
   { screen: 'Prayer', label: 'Home', icon: '⌂' },
   { screen: 'Worship', label: 'Library', icon: '▤' },
-  { screen: 'Stories', label: 'Stories', icon: '❖' },
+  { screen: 'Community', label: 'Community Hub', icon: '◎' },
   { screen: 'Guide', label: 'Guidance', icon: '✦' },
   { screen: 'More', label: 'Profile', icon: '◉' },
 ];
@@ -112,8 +111,8 @@ function isPrimaryTabActive(tab: PrimaryScreen, screen: Screen): boolean {
       return screen === 'Prayer' || screen === 'Global' || screen === 'Fasting';
     case 'Worship':
       return screen === 'Worship';
-    case 'Stories':
-      return screen === 'Stories';
+    case 'Community':
+      return screen === 'Community';
     case 'Guide':
       return screen === 'Guide';
     case 'More':
@@ -879,8 +878,11 @@ export default function App() {
     const query = searchQuery.trim();
     if (!query) return;
     const normalized = query.toLocaleLowerCase().replace(/[\u2018\u2019\u02bc]/g, "'");
-    const destination: Screen = /prophet|companion|sahab|story|stories|dajjal|yajuj|mahdi|sign of the hour/.test(normalized)
-      ? 'Stories'
+    const opensStories = /prophet|companion|sahab|story|stories|dajjal|yajuj|mahdi|sign of the hour/.test(normalized);
+    const destination: Screen = /community|project idea|event idea/.test(normalized)
+      ? 'Community'
+      : opensStories
+        ? 'Worship'
       : /qibla|qiblah|at.?tibb|remedy|health|wellness/.test(normalized)
         ? 'Guide'
         : /hadith|dua|du'a|adhkar|tasbeeh|tasbih|library|archive/.test(normalized)
@@ -894,6 +896,7 @@ export default function App() {
                 : /prayer|salah|fajr|dhuhr|asr|maghrib|isha/.test(normalized)
                   ? 'Prayer'
                   : 'Guide';
+    if (opensStories) setWorshipTab('Archives');
     setScreen(destination);
     if (destination === 'Guide') {
       setGuidanceSection(/qibla|qiblah/.test(normalized) ? 'qibla' : 'overview');
@@ -1019,7 +1022,7 @@ export default function App() {
               <View style={styles.contextHeader}>
                 <Text style={styles.contextHeaderGlyph}>
                   {screen === 'Worship' ? '▤' :
-                    screen === 'Stories' ? '❖' :
+                  screen === 'Community' ? '◎' :
                       screen === 'Guide' ? '✦' :
                         screen === 'More' ? '◉' :
                           screen === 'Global' ? '☾' :
@@ -1028,7 +1031,7 @@ export default function App() {
                 <View>
                   <Text style={styles.contextHeaderTitle}>
                     {screen === 'Worship' ? 'Library' :
-                      screen === 'Stories' ? 'Stories' :
+                      screen === 'Community' ? 'Community Hub' :
                         screen === 'Guide' ? 'Guidance' :
                           screen === 'More' ? 'Profile' :
                             screen === 'Global' ? 'Prayer & places' :
@@ -1036,7 +1039,7 @@ export default function App() {
                   </Text>
                   <Text style={styles.contextHeaderSubtitle}>
                     {screen === 'Worship' ? 'Qur’an, worship and remembrance' :
-                      screen === 'Stories' ? 'Prophets, companions, and signs' :
+                      screen === 'Community' ? 'Ideas and community updates' :
                         screen === 'Guide' ? 'Rafiq · offline and online guidance' :
                           screen === 'More' ? 'Account, progress and preferences' :
                             screen === 'Global' ? 'Times across your places' :
@@ -1045,7 +1048,7 @@ export default function App() {
                 </View>
               </View>
               <View style={styles.headerActions}>
-                {screen === 'Worship' || screen === 'Stories' ? (
+                {screen === 'Worship' || screen === 'Community' ? (
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel="Search Mishkah"
@@ -1545,12 +1548,19 @@ export default function App() {
             </>
           ) : null}
 
-          {screen === 'Stories' ? (
-            <StoriesHub
-              palette={palette}
-              furqanBaseUrl={furqanBaseUrl}
-              onNotice={setNotice}
-            />
+          {screen === 'Community' ? (
+            <>
+              <View style={styles.introBlock}>
+                <Text style={styles.eyebrow}>COMMUNITY HUB</Text>
+                <Text style={styles.pageTitle}>A place for good ideas.</Text>
+                <Text style={styles.bodyText}>The community board is planned, but submissions and voting are not active yet.</Text>
+              </View>
+              <View style={styles.communityPreview}>
+                <Text style={styles.communityIcon}>◎</Text>
+                <Text style={styles.communityTitle}>Coming in a later phase</Text>
+                <Text style={styles.bodyText}>This space is reserved for community project and event proposals, with admin review and upvoting. There will be no open chat.</Text>
+              </View>
+            </>
           ) : null}
 
           {screen === 'Guide' ? (
@@ -1658,6 +1668,7 @@ export default function App() {
               palette={palette}
               date={localDate}
               initialTab={worshipTab}
+              furqanBaseUrl={furqanBaseUrl}
               featuresUnlocked={syncState?.featuresUnlocked ?? ['basic-guidance']}
               onPreferencesChange={changePreferences}
               onNotice={setNotice}

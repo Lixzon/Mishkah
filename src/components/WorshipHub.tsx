@@ -38,6 +38,7 @@ import {
 } from '../domain/tasbeeh';
 import type { AppPreferences } from '../services/preferences';
 import { getReciterAudioUrl, QURAN_RECITERS } from '../domain/reciters';
+import { StoriesHub } from './StoriesHub';
 
 export type WorshipTab = 'Hadith' | 'Tasbeeh' | 'Adhkar' | 'Duas' | 'Reciters' | 'Archives';
 type Period = 'morning' | 'evening';
@@ -59,6 +60,7 @@ interface WorshipHubProps {
   preferences: AppPreferences;
   palette: WorshipPalette;
   date: string;
+  furqanBaseUrl: string;
   initialTab?: WorshipTab;
   featuresUnlocked: readonly string[];
   onPreferencesChange: (update: (current: AppPreferences) => AppPreferences) => void;
@@ -123,7 +125,7 @@ function makeShareSvg(entry: HadithEntry): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350"><rect width="1080" height="1350" fill="#F3F5F1"/><rect x="42" y="42" width="996" height="1266" rx="34" fill="#FFFFFF"/><rect x="88" y="100" width="8" height="88" rx="4" fill="#C59143"/><text x="124" y="132" fill="#71817D" font-size="24" font-family="Arial,sans-serif" letter-spacing="3">MISHKAH · DAILY HADITH</text><text x="88" y="326" fill="#145B50" font-size="50" font-family="Georgia,serif">${escapeXml(entry.title)}</text>${summaryLines}<text x="88" y="1080" fill="#71817D" font-size="25" font-family="Arial,sans-serif">${escapeXml(entry.reference)}</text><text x="88" y="1160" fill="#145B50" font-size="21" font-family="Arial,sans-serif">Teaching summary, not a verbatim translation</text><text x="88" y="1232" fill="#71817D" font-size="20" font-family="Arial,sans-serif">The Seeker who carries the Light of Guidance across horizons.</text></svg>`;
 }
 
-export function WorshipHub({ preferences, palette, date, initialTab = 'Hadith', featuresUnlocked, onPreferencesChange, onNotice }: WorshipHubProps) {
+export function WorshipHub({ preferences, palette, date, furqanBaseUrl, initialTab = 'Hadith', featuresUnlocked, onPreferencesChange, onNotice }: WorshipHubProps) {
   const [tab, setTab] = useState<WorshipTab>(initialTab);
   const [hadithQuery, setHadithQuery] = useState('');
   const [hadithCollection, setHadithCollection] = useState<HadithCollection | 'all'>('all');
@@ -133,6 +135,7 @@ export function WorshipHub({ preferences, palette, date, initialTab = 'Hadith', 
   const [duaCategory, setDuaCategory] = useState<DuaEntry['category'] | 'all'>('all');
   const [archiveQuery, setArchiveQuery] = useState('');
   const [archiveCategory, setArchiveCategory] = useState<(typeof ARCHIVE_CATEGORIES)[number]>('All');
+  const [archiveView, setArchiveView] = useState<'stories' | 'sources'>('stories');
   const [customName, setCustomName] = useState('');
   const [customTarget, setCustomTarget] = useState<(typeof CUSTOM_DHIKR_TARGETS)[number]>(33);
   const [selectedPresetId, setSelectedPresetId] = useState(TASBEEH_PRESETS[0].id);
@@ -617,50 +620,70 @@ export function WorshipHub({ preferences, palette, date, initialTab = 'Hadith', 
 
       {tab === 'Archives' ? (
         <>
-          <Text style={styles.bodyText}>
-            Short, source-linked introductions to Qur’anic stories, companions, signs, Adab, and food guidance. Summaries are educational, not fatwas.
-          </Text>
-          <TextInput
-            accessibilityLabel="Search Islamic archives"
-            onChangeText={setArchiveQuery}
-            placeholder="Search stories, people, or topics"
-            placeholderTextColor={palette.muted}
-            style={styles.searchInput}
-            value={archiveQuery}
-          />
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-            {ARCHIVE_CATEGORIES.map((category) => (
-              <ChoiceChip
-                key={category}
-                label={category}
-                selected={archiveCategory === category}
-                styles={styles}
-                onPress={() => setArchiveCategory(category)}
+          <View style={styles.chipRow}>
+            <ChoiceChip
+              label="Stories"
+              selected={archiveView === 'stories'}
+              styles={styles}
+              onPress={() => setArchiveView('stories')}
+            />
+            <ChoiceChip
+              label="Source archive"
+              selected={archiveView === 'sources'}
+              styles={styles}
+              onPress={() => setArchiveView('sources')}
+            />
+          </View>
+          {archiveView === 'stories' ? (
+            <StoriesHub palette={palette} furqanBaseUrl={furqanBaseUrl} onNotice={onNotice} />
+          ) : (
+            <>
+              <Text style={styles.bodyText}>
+                Source-linked archive notes on Qur’anic topics, Adab, and food guidance. Summaries are educational, not fatwas.
+              </Text>
+              <TextInput
+                accessibilityLabel="Search Islamic archives"
+                onChangeText={setArchiveQuery}
+                placeholder="Search topics or references"
+                placeholderTextColor={palette.muted}
+                style={styles.searchInput}
+                value={archiveQuery}
               />
-            ))}
-          </ScrollView>
-          {filteredArchive.map((entry) => (
-            <View key={entry.id} style={styles.archiveCard}>
-              <Text style={styles.cardEyebrow}>{entry.category.toUpperCase()}</Text>
-              <Text style={styles.cardTitle}>{entry.title}</Text>
-              <Text style={styles.bodyText}>{entry.summary}</Text>
-              <View style={styles.archiveSources}>
-                {entry.sources.map((source) => (
-                  <Pressable
-                    accessibilityRole="link"
-                    key={source.url}
-                    onPress={() => void openArchiveSource(source.url)}
-                  >
-                    <Text style={styles.archiveSourceLink}>Read {source.label} ↗</Text>
-                  </Pressable>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+                {ARCHIVE_CATEGORIES.map((category) => (
+                  <ChoiceChip
+                    key={category}
+                    label={category}
+                    selected={archiveCategory === category}
+                    styles={styles}
+                    onPress={() => setArchiveCategory(category)}
+                  />
                 ))}
-              </View>
-            </View>
-          ))}
-          {!filteredArchive.length ? <EmptyState text="No archive entries match this search." styles={styles} /> : null}
-          <Text style={styles.cardDisclosure}>
-            Islamic interpretation and end-times scholarship vary. Follow trusted scholars for detailed explanations. Health and food notes do not replace qualified medical advice.
-          </Text>
+              </ScrollView>
+              {filteredArchive.map((entry) => (
+                <View key={entry.id} style={styles.archiveCard}>
+                  <Text style={styles.cardEyebrow}>{entry.category.toUpperCase()}</Text>
+                  <Text style={styles.cardTitle}>{entry.title}</Text>
+                  <Text style={styles.bodyText}>{entry.summary}</Text>
+                  <View style={styles.archiveSources}>
+                    {entry.sources.map((source) => (
+                      <Pressable
+                        accessibilityRole="link"
+                        key={source.url}
+                        onPress={() => void openArchiveSource(source.url)}
+                      >
+                        <Text style={styles.archiveSourceLink}>Read {source.label} ↗</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              ))}
+              {!filteredArchive.length ? <EmptyState text="No archive entries match this search." styles={styles} /> : null}
+              <Text style={styles.cardDisclosure}>
+                Islamic interpretation and end-times scholarship vary. Follow trusted scholars for detailed explanations. Health and food notes do not replace qualified medical advice.
+              </Text>
+            </>
+          )}
         </>
       ) : null}
     </View>
