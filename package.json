@@ -48,7 +48,7 @@
     "web:serve": "npx expo serve",
     "icons": "node scripts/generate-brand-assets.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/prayer.test.ts tests/worship.test.ts tests/qibla.test.ts tests/islamicCalendar.test.ts tests/archives.test.ts tests/rafiq.test.ts"
+    "test": "tsx --test tests/prayer.test.ts tests/worship.test.ts tests/qibla.test.ts tests/islamicCalendar.test.ts tests/archives.test.ts tests/rafiq.test.ts tests/stories.test.ts"
   },
   "private": true
 }

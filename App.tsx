@@ -2,10 +2,12 @@ import { StatusBar } from 'expo-status-bar';
 import Constants from 'expo-constants';
 import * as Crypto from 'expo-crypto';
 import * as SplashScreen from 'expo-splash-screen';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   AppState,
+  Easing,
   Image,
   Linking,
   Modal,
@@ -64,6 +66,7 @@ import { schedulePrayerReminders } from './src/services/notifications';
 import { VoiceSearchButton } from './src/components/VoiceSearchButton';
 import { WorshipHub, type WorshipTab } from './src/components/WorshipHub';
 import { GuidanceHub } from './src/components/GuidanceHub';
+import { StoriesHub } from './src/components/StoriesHub';
 import { HISN_AL_MUSLIM_DUAS } from './src/domain/adhkar';
 import { getDailyHadith } from './src/domain/hadith';
 import { resetPostSalahCounts } from './src/domain/tasbeeh';
@@ -91,12 +94,12 @@ import {
   type SystemReport,
 } from './src/services/systemReport';
 
-type Screen = 'Prayer' | 'Global' | 'Fasting' | 'Guide' | 'More' | 'Worship' | 'Settings' | 'Community';
-type PrimaryScreen = 'Prayer' | 'Worship' | 'Community' | 'Guide' | 'More';
+type Screen = 'Prayer' | 'Global' | 'Fasting' | 'Guide' | 'More' | 'Worship' | 'Settings' | 'Stories';
+type PrimaryScreen = 'Prayer' | 'Worship' | 'Stories' | 'Guide' | 'More';
 const PRIMARY_TABS: readonly { screen: PrimaryScreen; label: string; icon: string }[] = [
   { screen: 'Prayer', label: 'Home', icon: '⌂' },
   { screen: 'Worship', label: 'Library', icon: '▤' },
-  { screen: 'Community', label: 'Community Hub', icon: '◎' },
+  { screen: 'Stories', label: 'Stories', icon: '❖' },
   { screen: 'Guide', label: 'Guidance', icon: '✦' },
   { screen: 'More', label: 'Profile', icon: '◉' },
 ];
@@ -107,8 +110,8 @@ function isPrimaryTabActive(tab: PrimaryScreen, screen: Screen): boolean {
       return screen === 'Prayer' || screen === 'Global' || screen === 'Fasting';
     case 'Worship':
       return screen === 'Worship';
-    case 'Community':
-      return screen === 'Community';
+    case 'Stories':
+      return screen === 'Stories';
     case 'Guide':
       return screen === 'Guide';
     case 'More':
@@ -129,7 +132,7 @@ type Palette = {
   danger: string;
 };
 
-const PALETTES: Record<'light' | 'dark' | 'midnight', Palette> = {
+const PALETTES: Record<'light' | 'dark' | 'oled' | 'sepia' | 'midnight', Palette> = {
   light: {
     background: '#F3F5F1',
     surface: '#FFFFFF',
@@ -168,6 +171,32 @@ const PALETTES: Record<'light' | 'dark' | 'midnight', Palette> = {
     gold: '#E1B96E',
     goldTint: '#343126',
     danger: '#F2A5A5',
+  },
+  oled: {
+    background: '#000000',
+    surface: '#050505',
+    surfaceRaised: '#161616',
+    ink: '#F4F7F5',
+    muted: '#909A95',
+    line: '#242424',
+    accent: '#7CC5A7',
+    accentInk: '#04120E',
+    gold: '#E3C15A',
+    goldTint: '#2A2618',
+    danger: '#F2605F',
+  },
+  sepia: {
+    background: '#EFE5D1',
+    surface: '#F8F0DF',
+    surfaceRaised: '#E8DCC3',
+    ink: '#33291E',
+    muted: '#796B56',
+    line: '#D8C9AC',
+    accent: '#145B50',
+    accentInk: '#FFFFFF',
+    gold: '#99712B',
+    goldTint: '#EFE2C6',
+    danger: '#B42318',
   },
 };
 
@@ -248,6 +277,9 @@ export default function App() {
   const [isReady, setIsReady] = useState(false);
   const [screen, setScreen] = useState<Screen>('Prayer');
   const [now, setNow] = useState(new Date());
+  const contentScrollRef = useRef<ComponentRef<typeof ScrollView> | null>(null);
+  const screenMotion = useRef(new Animated.Value(1)).current;
+  const screenRise = useRef(screenMotion.interpolate({ inputRange: [0, 1], outputRange: [10, 0] })).current;
   const [appState, setAppState] = useState(
     AppState.currentState == null || AppState.currentState === 'active' ? 'active' : 'background',
   );
@@ -343,6 +375,25 @@ export default function App() {
     const interval = setInterval(() => setNow(new Date()), 30_000);
     return () => clearInterval(interval);
   }, [appState]);
+
+  useEffect(() => {
+    contentScrollRef.current?.scrollTo({ y: 0, animated: false });
+    const reduceMotion = Platform.OS === 'web'
+      && typeof window !== 'undefined'
+      && typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduceMotion) {
+      screenMotion.setValue(1);
+      return;
+    }
+    screenMotion.setValue(0);
+    Animated.timing(screenMotion, {
+      toValue: 1,
+      duration: 260,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: Platform.OS !== 'web',
+    }).start();
+  }, [screen, screenMotion]);
 
   useEffect(() => {
     if (
@@ -784,8 +835,8 @@ export default function App() {
     const query = searchQuery.trim();
     if (!query) return;
     const normalized = query.toLocaleLowerCase().replace(/[\u2018\u2019\u02bc]/g, "'");
-    const destination: Screen = /community|project idea|event idea/.test(normalized)
-      ? 'Community'
+    const destination: Screen = /prophet|companion|sahab|story|stories|dajjal|yajuj|mahdi|sign of the hour/.test(normalized)
+      ? 'Stories'
       : /qibla|qiblah|at.?tibb|remedy|health|wellness/.test(normalized)
         ? 'Guide'
         : /hadith|dua|du'a|adhkar|tasbeeh|tasbih|library|archive/.test(normalized)
@@ -924,7 +975,7 @@ export default function App() {
               <View style={styles.contextHeader}>
                 <Text style={styles.contextHeaderGlyph}>
                   {screen === 'Worship' ? '▤' :
-                    screen === 'Community' ? '◎' :
+                    screen === 'Stories' ? '❖' :
                       screen === 'Guide' ? '✦' :
                         screen === 'More' ? '◉' :
                           screen === 'Global' ? '☾' :
@@ -933,7 +984,7 @@ export default function App() {
                 <View>
                   <Text style={styles.contextHeaderTitle}>
                     {screen === 'Worship' ? 'Library' :
-                      screen === 'Community' ? 'Community Hub' :
+                      screen === 'Stories' ? 'Stories' :
                         screen === 'Guide' ? 'Guidance' :
                           screen === 'More' ? 'Profile' :
                             screen === 'Global' ? 'Prayer & places' :
@@ -941,7 +992,7 @@ export default function App() {
                   </Text>
                   <Text style={styles.contextHeaderSubtitle}>
                     {screen === 'Worship' ? 'Qur’an, worship and remembrance' :
-                      screen === 'Community' ? 'Ideas and community updates' :
+                      screen === 'Stories' ? 'Prophets, companions, and signs' :
                         screen === 'Guide' ? 'Rafiq · offline and online guidance' :
                           screen === 'More' ? 'Account, progress and preferences' :
                             screen === 'Global' ? 'Times across your places' :
@@ -950,7 +1001,7 @@ export default function App() {
                 </View>
               </View>
               <View style={styles.headerActions}>
-                {screen === 'Worship' || screen === 'Community' ? (
+                {screen === 'Worship' || screen === 'Stories' ? (
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel="Search Mishkah"
@@ -1003,6 +1054,8 @@ export default function App() {
         </View>
 
         <ScrollView
+          ref={contentScrollRef}
+          style={styles.contentScroll}
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
           refreshControl={screen === 'Prayer' ? (
@@ -1014,6 +1067,7 @@ export default function App() {
           ) : undefined}
           showsVerticalScrollIndicator={false}
         >
+          <Animated.View style={[styles.contentMotion, { opacity: screenMotion, transform: [{ translateY: screenRise }] }]}>
           {notice ? (
             <Pressable accessibilityRole="button" onPress={() => setNotice('')} style={styles.notice}>
               <Text style={styles.noticeText}>{notice}</Text>
@@ -1447,19 +1501,12 @@ export default function App() {
             </>
           ) : null}
 
-          {screen === 'Community' ? (
-            <>
-              <View style={styles.introBlock}>
-                <Text style={styles.eyebrow}>COMMUNITY HUB</Text>
-                <Text style={styles.pageTitle}>A place for good ideas.</Text>
-                <Text style={styles.bodyText}>The community board is planned, but submissions and voting are not active yet.</Text>
-              </View>
-              <View style={styles.communityPreview}>
-                <Text style={styles.communityIcon}>◎</Text>
-                <Text style={styles.communityTitle}>Coming in a later phase</Text>
-                <Text style={styles.bodyText}>This space is reserved for community project and event proposals, with admin review and upvoting. There will be no open chat.</Text>
-              </View>
-            </>
+          {screen === 'Stories' ? (
+            <StoriesHub
+              palette={palette}
+              furqanBaseUrl={furqanBaseUrl}
+              onNotice={setNotice}
+            />
           ) : null}
 
           {screen === 'Guide' ? (
@@ -1688,9 +1735,17 @@ export default function App() {
                 <Text style={styles.settingGroupTitle}>Appearance</Text>
                 <Text style={styles.settingDescription}>Choose a calm, easy-on-the-eyes palette.</Text>
                 <View style={styles.choiceRow}>
-                  {(['light', 'dark', 'midnight'] as const).map((appearance) => {
+                  {(['light', 'dark', 'oled', 'sepia', 'midnight'] as const).map((appearance) => {
                     const locked = appearance === 'midnight' && !syncState?.featuresUnlocked.includes('premium-theme-collection');
-                    const label = appearance === 'light' ? 'Daylight' : appearance === 'dark' ? 'Night' : locked ? 'Midnight · 14d' : 'Midnight';
+                    const label = appearance === 'light'
+                      ? 'Daylight'
+                      : appearance === 'dark'
+                        ? 'Night'
+                        : appearance === 'oled'
+                          ? 'OLED'
+                          : appearance === 'sepia'
+                            ? 'Parchment'
+                            : locked ? 'Midnight · 14d' : 'Midnight';
                     return (
                       <Pressable
                         accessibilityRole="button"
@@ -1945,6 +2000,7 @@ export default function App() {
             <View style={styles.footerLine} />
             <Text style={styles.footerBrand}>by LIXZON</Text>
           </View>
+          </Animated.View>
         </ScrollView>
         {!isWideLayout ? (
         <View style={styles.bottomNav}>
@@ -2454,9 +2510,14 @@ function createStyles(colors: Palette) {
     splashSpinner: { marginTop: 26 },
     splashFooter: { color: colors.muted, fontSize: 9, fontWeight: '600', letterSpacing: 3 },
     screen: { flex: 1, width: '100%', maxWidth: 760, alignSelf: 'center' },
-    wideScreen: { maxWidth: '100%', alignSelf: 'stretch', flexDirection: 'row' },
-    mainColumn: { flex: 1, minWidth: 0, width: '100%' },
-    mainColumnWide: { maxWidth: 1180, alignSelf: 'center' },
+    wideScreen: {
+      maxWidth: '100%',
+      alignSelf: 'stretch',
+      flexDirection: 'row',
+      justifyContent: 'center',
+    },
+    mainColumn: { flex: 1, minWidth: 0, minHeight: 0, width: '100%' },
+    mainColumnWide: { maxWidth: 1180, width: '100%', alignSelf: 'stretch' },
     desktopSidebar: {
       width: 218,
       paddingHorizontal: 13,
@@ -2561,6 +2622,8 @@ function createStyles(colors: Palette) {
     bottomTabIconActive: { color: colors.accent },
     bottomTabLabel: { color: colors.muted, fontSize: 9, fontWeight: '600', marginTop: 1 },
     bottomTabLabelActive: { color: colors.accent, fontWeight: '700' },
+    contentScroll: { flex: 1, minHeight: 0 },
+    contentMotion: { flexGrow: 1 },
     content: { paddingHorizontal: 20, paddingTop: 7, paddingBottom: 32 },
     dailyHighlightCard: { padding: 17, marginTop: 9, borderRadius: 18, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
     highlightEyebrow: { color: colors.gold, fontSize: 9, fontWeight: '700', letterSpacing: 0.8 },

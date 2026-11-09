@@ -1,4 +1,4 @@
-﻿# Mishkah
+# Mishkah
 
 Mishkah is a cross-platform, offline-first React Native application by LIXZON.
 Its tagline is â€œThe Seeker who carries the Light of Guidance across horizons.â€
@@ -62,6 +62,18 @@ Hisn al-Muslim or a substitute for checking religious rulings with a trusted
 scholar. English wording is concise explanatory meaning, not a published
 translation.
 
+### Stories
+
+The Stories tab replaces the earlier Community placeholder. It is organised into
+six sections: the twenty-five prophets named in the Qur'an (numbered in order
+from Adam to Muhammad ﷺ), the Companions, the next generation, past nations,
+the signs of the Hour, and the Hereafter.
+
+Every story ships a short reading and a longer one. Verse references open the
+full surah at that ayah in Furqan, and each entry links to a video search for a
+fuller talk rather than reproducing someone else's narration in the app.
+Content lives in `src/domain/stories.ts`, so adding a story is a data change,
+not a UI change.
 ### Pairing with Furqan
 
 Mishkah and Furqan share progress through one private 20-character pairing

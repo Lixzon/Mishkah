@@ -10,7 +10,7 @@ export type AppPreferences = {
   pinnedCityIds: string[];
   selectedCityId: string;
   jumuahTimesByCity: Record<string, string>;
-  theme: 'light' | 'dark' | 'midnight';
+  theme: 'light' | 'dark' | 'oled' | 'sepia' | 'midnight';
   calculationMethod: CalculationMethod;
   prayerAlarms: Partial<Record<Exclude<PrayerName, 'Sunrise'>, boolean>>;
   fajrAlarm: boolean;
@@ -122,7 +122,15 @@ function normalizePreferences(value: unknown): AppPreferences {
     pinnedCityIds,
     selectedCityId,
     jumuahTimesByCity: normalizeJumuahTimesByCity(input.jumuahTimesByCity),
-    theme: input.theme === 'midnight' ? 'midnight' : input.theme === 'dark' ? 'dark' : 'light',
+    theme: input.theme === 'midnight'
+      ? 'midnight'
+      : input.theme === 'oled'
+        ? 'oled'
+        : input.theme === 'sepia'
+          ? 'sepia'
+          : input.theme === 'dark'
+            ? 'dark'
+            : 'light',
     calculationMethod: isCalculationMethod(input.calculationMethod)
       ? input.calculationMethod
       : DEFAULT_PREFERENCES.calculationMethod,
