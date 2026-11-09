@@ -8,6 +8,8 @@ Set `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` in the build 
 
 For the GitHub Pages deployment, add repository Actions secrets named `SUPABASE_URL` and `SUPABASE_ANON_KEY`. The deploy workflow maps them to the Expo build variables. Without these secrets, the deployed build remains local-only.
 
+Enable GitHub Pages once in the repository: Settings -> Pages -> Build and deployment -> Source -> GitHub Actions. The deployment workflow cannot enable Pages itself; GitHub currently rejects that operation from the workflow token. After Pages and the secrets are configured, push or rerun the `Deploy web` workflow.
+
 Apply both migrations from the Furqan repository to the same project:
 
 - `supabase/migrations/20261108150000_lixzon_sync_records.sql`
