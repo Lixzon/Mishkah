@@ -6,6 +6,8 @@ Mishkah and Furqan share progress through one private pairing code. There is no 
 
 Set `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` in the build environment. These are client configuration values; a Supabase service-role key must never be embedded in the app.
 
+For the GitHub Pages deployment, add repository Actions secrets named `SUPABASE_URL` and `SUPABASE_ANON_KEY`. The deploy workflow maps them to the Expo build variables. Without these secrets, the deployed build remains local-only.
+
 Apply both migrations from the Furqan repository to the same project:
 
 - `supabase/migrations/20261108150000_lixzon_sync_records.sql`

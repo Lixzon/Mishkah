@@ -1821,15 +1821,20 @@ export default function App() {
                 <Text style={styles.settingDescription}>
                   {syncConfigured
                     ? 'Pair once with Furqan to keep your streak, memorized ayahs, and the Qur’an verse of the day in sync. No account sign-in is needed.'
-                    : 'Cross-app sync is not configured for this build. Your data stays on this device.'}
+                    : 'Pairing is not switched on for this build. Everything else in Mishkah works offline.'}
                 </Text>
                 <View style={styles.syncCard}>
                   <Text style={styles.syncLabel}>Status</Text>
                   <Text style={styles.syncValue}>{pairCode ? 'Paired with Furqan' : 'Local-only mode'}</Text>
                   <Text style={styles.syncMeta}>{syncState?.status ?? 'idle'} · {syncState?.queuedCount ?? 0} queued updates</Text>
                   {pairCode ? <Text style={styles.syncMeta}>Pairing code {pairCode}</Text> : null}
+                  {!syncConfigured ? (
+                    <Text style={styles.syncMeta}>
+                      The app needs a shared sync project before a code can be created. Your data stays on this device.
+                    </Text>
+                  ) : null}
                 </View>
-                {pairCode ? (
+                {!syncConfigured ? null : pairCode ? (
                   <View style={styles.inlineActions}>
                     <ActionButton
                       label={syncConfigured ? 'Sync now' : 'Sync unavailable'}
@@ -2064,10 +2069,12 @@ export default function App() {
                 {pairCode ? `Pairing code ${pairCode}` : 'Your settings remain on this device.'}
               </Text>
               {!syncConfigured ? (
-                <Text style={styles.syncMeta}>Cross-app sync is unavailable in this build. Your data stays on this device.</Text>
+                <Text style={styles.syncMeta}>
+                  Pairing needs a shared sync project, which this build does not have. Your data stays on this device.
+                </Text>
               ) : null}
             </View>
-            {pairCode ? (
+            {!syncConfigured ? null : pairCode ? (
               <View style={styles.inlineActions}>
                 <ActionButton
                   label={syncConfigured ? 'Sync now' : 'Sync unavailable'}
