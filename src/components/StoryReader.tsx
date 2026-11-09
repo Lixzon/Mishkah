@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { quranRefLabel, type Story } from '../domain/stories';
 import type { WorshipPalette } from './WorshipHub';
@@ -7,13 +7,18 @@ interface StoryReaderProps {
   story: Story | null;
   palette: WorshipPalette;
   furqanBaseUrl: string;
+  initialMode?: 'short' | 'long';
   onClose: () => void;
   onNotice: (message: string) => void;
 }
 
-export function StoryReader({ story, palette, furqanBaseUrl, onClose, onNotice }: StoryReaderProps) {
-  const [mode, setMode] = useState<'short' | 'long'>('short');
+export function StoryReader({ story, palette, furqanBaseUrl, initialMode = 'short', onClose, onNotice }: StoryReaderProps) {
+  const [mode, setMode] = useState<'short' | 'long'>(initialMode);
   const styles = useMemo(() => createStyles(palette), [palette]);
+
+  useEffect(() => {
+    setMode(initialMode);
+  }, [story?.id, initialMode]);
 
   const openLink = async (url: string) => {
     try {

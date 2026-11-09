@@ -1,17 +1,21 @@
 import * as Haptics from 'expo-haptics';
 import * as Sharing from 'expo-sharing';
 import Constants from 'expo-constants';
+import { Asset } from 'expo-asset';
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import ViewShot, { type ViewShotRef } from 'react-native-view-shot';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import * as Clipboard from 'expo-clipboard';
 import {
   Animated,
   Easing,
+  Image,
   Linking,
   Modal,
   Platform,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -68,6 +72,12 @@ interface WorshipHubProps {
 }
 
 const TABS: readonly WorshipTab[] = ['Hadith', 'Tasbeeh', 'Adhkar', 'Duas', 'Reciters', 'Archives'];
+const SHARE_SCENES = [
+  { id: 'ocean', label: 'Ocean', source: require('../../assets/share-backgrounds/ocean.jpg') },
+  { id: 'snow', label: 'Snow', source: require('../../assets/share-backgrounds/snow.jpg') },
+  { id: 'sky', label: 'Clouds', source: require('../../assets/share-backgrounds/sky.jpg') },
+  { id: 'skyline', label: 'City', source: require('../../assets/share-backgrounds/skyline.jpg') },
+] as const;
 const DUA_CATEGORIES: readonly (DuaEntry['category'] | 'all')[] = [
   'all',
   'travel',
@@ -100,7 +110,7 @@ function furqanLinkFor(url: string): string | null {
   return `${FURQAN_BASE_URL}/surah/${surah}${ayah ? `?ayah=${ayah}` : ''}`;
 }
 
-function makeShareSvg(entry: HadithEntry): string {
+function makeShareSvg(entry: HadithEntry, photoDataUri: string): string {
   const lines: string[] = [];
   const words = entry.summary.split(/\s+/);
   let line = '';
@@ -119,10 +129,34 @@ function makeShareSvg(entry: HadithEntry): string {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;');
   const summaryLines = lines.map((text, index) =>
-    `<text x="88" y="${520 + index * 64}" fill="#162D2C" font-size="36" font-family="Georgia,serif">${escapeXml(text)}</text>`,
+    `<text x="88" y="${520 + index * 64}" fill="#FFFFFF" font-size="36" font-family="Georgia,serif">${escapeXml(text)}</text>`,
   ).join('');
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350"><rect width="1080" height="1350" fill="#F3F5F1"/><rect x="42" y="42" width="996" height="1266" rx="34" fill="#FFFFFF"/><rect x="88" y="100" width="8" height="88" rx="4" fill="#C59143"/><text x="124" y="132" fill="#71817D" font-size="24" font-family="Arial,sans-serif" letter-spacing="3">MISHKAH · DAILY HADITH</text><text x="88" y="326" fill="#145B50" font-size="50" font-family="Georgia,serif">${escapeXml(entry.title)}</text>${summaryLines}<text x="88" y="1080" fill="#71817D" font-size="25" font-family="Arial,sans-serif">${escapeXml(entry.reference)}</text><text x="88" y="1160" fill="#145B50" font-size="21" font-family="Arial,sans-serif">Teaching summary, not a verbatim translation</text><text x="88" y="1232" fill="#71817D" font-size="20" font-family="Arial,sans-serif">The Seeker who carries the Light of Guidance across horizons.</text></svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350"><image href="${photoDataUri}" width="1080" height="1350" preserveAspectRatio="xMidYMid slice"/><rect width="1080" height="1350" fill="#071615" opacity=".66"/><rect x="62" y="62" width="956" height="1226" rx="34" fill="none" stroke="#FFFFFF" stroke-opacity=".22" stroke-width="2"/><rect x="88" y="100" width="8" height="88" rx="4" fill="#E8C781"/><text x="124" y="132" fill="#F4E2B9" font-size="24" font-family="Arial,sans-serif" letter-spacing="3">MISHKAH · HADITH SUMMARY</text><text x="88" y="326" fill="#FFFFFF" font-size="50" font-family="Georgia,serif">${escapeXml(entry.title)}</text>${summaryLines}<text x="88" y="1080" fill="#F4E2B9" font-size="25" font-family="Arial,sans-serif">${escapeXml(entry.reference)}</text><text x="88" y="1160" fill="#FFFFFF" font-size="21" font-family="Arial,sans-serif">Teaching summary, not a verbatim translation</text><text x="88" y="1232" fill="#FFFFFF" fill-opacity=".72" font-size="20" font-family="Arial,sans-serif">Mishkah · by LIXZON</text></svg>`;
+}
+
+async function photoDataUri(source: number): Promise<string> {
+  const uri = Asset.fromModule(source).uri;
+  if (!uri) throw new Error('The selected photo could not be resolved.');
+  const response = await fetch(uri);
+  if (!response.ok) throw new Error(`The selected photo could not be loaded (HTTP ${response.status}).`);
+  const blob = await response.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => typeof reader.result === 'string'
+      ? resolve(reader.result)
+      : reject(new Error('The selected photo could not be prepared for sharing.'));
+    reader.onerror = () => reject(new Error('The selected photo could not be prepared for sharing.'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function hadithShareText(entry: HadithEntry): string {
+  return `${entry.title}\n${entry.summary}\n\n${entry.reference}\n\nTeaching summary, not a verbatim translation.`;
+}
+
+function duaShareText(entry: DuaEntry): string {
+  return `${entry.title}\n${entry.arabic}\n${entry.transliteration}\n${entry.meaning}\n\n${entry.reference}`;
 }
 
 export function WorshipHub({ preferences, palette, date, furqanBaseUrl, initialTab = 'Hadith', featuresUnlocked, onPreferencesChange, onNotice }: WorshipHubProps) {
@@ -130,12 +164,14 @@ export function WorshipHub({ preferences, palette, date, furqanBaseUrl, initialT
   const [hadithQuery, setHadithQuery] = useState('');
   const [hadithCollection, setHadithCollection] = useState<HadithCollection | 'all'>('all');
   const [selectedHadithId, setSelectedHadithId] = useState(() => getDailyHadith().id);
+  const [hadithDetail, setHadithDetail] = useState<HadithEntry | null>(null);
   const [period, setPeriod] = useState<Period>('morning');
   const [duaQuery, setDuaQuery] = useState('');
   const [duaCategory, setDuaCategory] = useState<DuaEntry['category'] | 'all'>('all');
   const [archiveQuery, setArchiveQuery] = useState('');
   const [archiveCategory, setArchiveCategory] = useState<(typeof ARCHIVE_CATEGORIES)[number]>('All');
   const [archiveView, setArchiveView] = useState<'stories' | 'sources'>('stories');
+  const [shareSceneId, setShareSceneId] = useState<(typeof SHARE_SCENES)[number]['id']>('ocean');
   const [customName, setCustomName] = useState('');
   const [customTarget, setCustomTarget] = useState<(typeof CUSTOM_DHIKR_TARGETS)[number]>(33);
   const [selectedPresetId, setSelectedPresetId] = useState(TASBEEH_PRESETS[0].id);
@@ -169,6 +205,8 @@ export function WorshipHub({ preferences, palette, date, furqanBaseUrl, initialT
     ? HADITH_COLLECTIONS
     : HADITH_COLLECTIONS.filter((entry) => entry.collection === 'nawawi40');
   const selectedHadith = allowedHadiths.find((item) => item.id === selectedHadithId) ?? getDailyHadith();
+  const shareScene = SHARE_SCENES.find((scene) => scene.id === shareSceneId) ?? SHARE_SCENES[0];
+  const resolvedShareScene = Asset.fromModule(shareScene.source);
   const filteredHadiths = searchHadiths(hadithQuery, hadithCollection)
     .filter((entry) => extendedHadithUnlocked || entry.collection === 'nawawi40');
   const filteredDuas = searchDuas(duaQuery, duaCategory);
@@ -307,14 +345,45 @@ export function WorshipHub({ preferences, palette, date, furqanBaseUrl, initialT
     audioPlayer.play();
   };
 
+  const copyToClipboard = async (text: string, label: string) => {
+    try {
+      await Clipboard.setStringAsync(text);
+      onNotice(`${label} copied to the clipboard.`);
+    } catch (error) {
+      onNotice(`Could not copy ${label.toLowerCase()}: ${error instanceof Error ? error.message : 'clipboard access is unavailable'}`);
+    }
+  };
+
+  const shareText = async (title: string, text: string, label: string) => {
+    try {
+      if (Platform.OS === 'web') {
+        const webNavigator = navigator as Navigator & { share?: (data: ShareData) => Promise<void> };
+        if (typeof webNavigator.share === 'function') {
+          await webNavigator.share({ title, text });
+          onNotice(`${label} shared.`);
+          return;
+        }
+        await Clipboard.setStringAsync(text);
+        onNotice(`Sharing is unavailable in this browser; ${label.toLowerCase()} copied instead.`);
+        return;
+      }
+      const result = await Share.share({ title, message: text });
+      if (result.action === Share.sharedAction) onNotice(`${label} shared.`);
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') return;
+      onNotice(`Could not share ${label.toLowerCase()}: ${error instanceof Error ? error.message : 'sharing is unavailable'}`);
+    }
+  };
+
   const shareHadith = async () => {
     try {
       if (Platform.OS === 'web') {
+        const background = await photoDataUri(shareScene.source);
         const anchor = document.createElement('a');
-        anchor.href = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(makeShareSvg(selectedHadith))}`;
+        anchor.href = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(makeShareSvg(selectedHadith, background))}`;
         anchor.download = `mishkah-hadith-${selectedHadith.id}.svg`;
         anchor.click();
-        onNotice('Hadith card downloaded as an image.');
+        onNotice('Hadith photo card downloaded.');
         return;
       }
       if (!cardRef.current || !(await Sharing.isAvailableAsync())) {
@@ -324,8 +393,8 @@ export function WorshipHub({ preferences, palette, date, furqanBaseUrl, initialT
       const imageUri = await cardRef.current?.capture();
       if (!imageUri) return;
       await Sharing.shareAsync(imageUri, { mimeType: 'image/png', dialogTitle: 'Share Hadith card' });
-    } catch {
-      onNotice('The Hadith card could not be exported.');
+    } catch (error) {
+      onNotice(`The Hadith photo card could not be exported: ${error instanceof Error ? error.message : 'unknown error'}`);
     }
   };
 
@@ -347,15 +416,49 @@ export function WorshipHub({ preferences, palette, date, furqanBaseUrl, initialT
 
       {tab === 'Hadith' ? (
         <>
-          <ViewShot ref={cardRef} options={{ format: 'png', quality: 1, result: 'tmpfile' }} style={styles.hadithCard}>
-            <View style={styles.cardAccent} />
-            <Text style={styles.cardEyebrow}>DAILY HADITH</Text>
-            <Text style={styles.cardTitle}>{selectedHadith.title}</Text>
-            <Text style={styles.cardSummary}>{selectedHadith.summary}</Text>
-            <Text style={styles.cardReference}>{selectedHadith.reference}</Text>
-            <Text style={styles.cardDisclosure}>Teaching summary, not a verbatim translation.</Text>
-          </ViewShot>
-          <ActionRow label="Export share card" icon="↗" styles={styles} onPress={() => void shareHadith()} />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Read details for ${selectedHadith.title}`}
+            onPress={() => setHadithDetail(selectedHadith)}
+          >
+            <ViewShot ref={cardRef} options={{ format: 'png', quality: 1, result: 'tmpfile' }} style={styles.hadithCard}>
+              {Platform.OS === 'web' && resolvedShareScene?.uri ? (
+                <View
+                  pointerEvents="none"
+                  style={[
+                    styles.photoBackground,
+                    {
+                      backgroundImage: `url("${resolvedShareScene.uri}")`,
+                      backgroundPosition: 'center',
+                      backgroundSize: 'cover',
+                    },
+                  ]}
+                />
+              ) : (
+                <Image source={shareScene.source} resizeMode="cover" style={styles.photoBackground} />
+              )}
+              <View style={styles.hadithScrim} />
+              <View style={styles.cardAccent} />
+              <Text style={styles.photoCardEyebrow}>DAILY HADITH SUMMARY</Text>
+              <Text style={styles.photoCardTitle}>{selectedHadith.title}</Text>
+              <Text style={styles.photoCardSummary}>{selectedHadith.summary}</Text>
+              <Text style={styles.photoCardReference}>{selectedHadith.reference}</Text>
+              <Text style={styles.photoCardDisclosure}>Teaching summary, not a verbatim translation · Tap for details</Text>
+            </ViewShot>
+          </Pressable>
+          <Text style={styles.sectionCaption}>Photo background</Text>
+          <View style={styles.chipRow}>
+            {SHARE_SCENES.map((scene) => (
+              <ChoiceChip
+                key={scene.id}
+                label={scene.label}
+                selected={shareSceneId === scene.id}
+                styles={styles}
+                onPress={() => setShareSceneId(scene.id)}
+              />
+            ))}
+          </View>
+          <ActionRow label="Save/share Hadith photo card" icon="↗" styles={styles} onPress={() => void shareHadith()} />
           <SectionLabel title="Hadith library" detail={`${filteredHadiths.length} entries`} styles={styles} />
           <TextInput
             accessibilityLabel="Search Hadith"
@@ -387,7 +490,16 @@ export function WorshipHub({ preferences, palette, date, furqanBaseUrl, initialT
           ) : null}
           <View style={styles.listGroup}>
             {filteredHadiths.map((entry) => (
-              <Pressable key={entry.id} onPress={() => setSelectedHadithId(entry.id)} style={styles.listRow}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Open ${entry.title}, ${entry.reference}`}
+                key={entry.id}
+                onPress={() => {
+                  setSelectedHadithId(entry.id);
+                  setHadithDetail(entry);
+                }}
+                style={styles.listRow}
+              >
                 <View style={styles.listCopy}>
                   <Text style={styles.listTitle}>{entry.title}</Text>
                   <Text style={styles.listSubtitle}>{entry.reference}</Text>
@@ -569,7 +681,17 @@ export function WorshipHub({ preferences, palette, date, furqanBaseUrl, initialT
               <ChoiceChip key={category} label={categoryLabel(category)} selected={duaCategory === category} styles={styles} onPress={() => setDuaCategory(category)} />
             ))}
           </ScrollView>
-          {filteredDuas.map((dua) => <AdhkarCard key={dua.id} entry={dua} count={0} palette={palette} styles={styles} />)}
+          {filteredDuas.map((dua) => (
+            <AdhkarCard
+              key={dua.id}
+              entry={dua}
+              count={0}
+              palette={palette}
+              styles={styles}
+              onCopy={() => void copyToClipboard(duaShareText(dua), 'Du’a')}
+              onShare={() => void shareText(dua.title, duaShareText(dua), 'Du’a')}
+            />
+          ))}
           {!filteredDuas.length ? <EmptyState text="No supplications match this search." styles={styles} /> : null}
         </>
       ) : null}
@@ -709,6 +831,44 @@ export function WorshipHub({ preferences, palette, date, furqanBaseUrl, initialT
         </View>
       </View>
     </Modal>
+    <Modal
+      animationType="slide"
+      onRequestClose={() => setHadithDetail(null)}
+      transparent
+      visible={hadithDetail !== null}
+    >
+      <View style={styles.resetBackdrop}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Close Hadith details" onPress={() => setHadithDetail(null)} style={StyleSheet.absoluteFill} />
+        {hadithDetail ? (
+          <View style={styles.detailDialog}>
+            <Text style={styles.eyebrow}>{hadithDetail.chapter.toUpperCase()}</Text>
+            <Text style={styles.detailTitle}>{hadithDetail.title}</Text>
+            <Text style={styles.bodyText}>{hadithDetail.summary}</Text>
+            <Text style={styles.cardReference}>{hadithDetail.reference}</Text>
+            <Text style={styles.cardDisclosure}>This is a teaching summary, not the full hadith text or a verbatim translation.</Text>
+            <View style={styles.detailActions}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => void copyToClipboard(hadithShareText(hadithDetail), 'Hadith summary')}
+                style={styles.secondaryButton}
+              >
+                <Text style={styles.secondaryButtonText}>Copy text</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => void shareText(hadithDetail.title, hadithShareText(hadithDetail), 'Hadith summary')}
+                style={styles.confirmResetButton}
+              >
+                <Text style={styles.confirmResetText}>Share</Text>
+              </Pressable>
+            </View>
+            <Pressable accessibilityRole="button" onPress={() => setHadithDetail(null)} style={styles.closeDetailButton}>
+              <Text style={styles.secondaryButtonText}>Close</Text>
+            </Pressable>
+          </View>
+        ) : null}
+      </View>
+    </Modal>
     </>
   );
 }
@@ -765,12 +925,14 @@ function EmptyState({ text, styles }: { text: string; styles: ReturnType<typeof 
   return <Text style={styles.emptyState}>{text}</Text>;
 }
 
-function AdhkarCard({ entry, count, palette, styles, onPress }: {
+function AdhkarCard({ entry, count, palette, styles, onPress, onCopy, onShare }: {
   entry: AdhkarEntry;
   count: number;
   palette: WorshipPalette;
   styles: ReturnType<typeof createStyles>;
   onPress?: () => void;
+  onCopy?: () => void;
+  onShare?: () => void;
 }) {
   const content = (
     <>
@@ -782,6 +944,20 @@ function AdhkarCard({ entry, count, palette, styles, onPress }: {
       <Text style={styles.transliteration}>{entry.transliteration}</Text>
       <Text style={styles.cardSummary}>{entry.meaning}</Text>
       <Text style={styles.cardReference}>{entry.reference}</Text>
+      {onCopy || onShare ? (
+        <View style={styles.adhkarActions}>
+          {onCopy ? (
+            <Pressable accessibilityRole="button" onPress={onCopy} style={styles.adhkarActionButton}>
+              <Text style={styles.adhkarActionLabel}>Copy</Text>
+            </Pressable>
+          ) : null}
+          {onShare ? (
+            <Pressable accessibilityRole="button" onPress={onShare} style={styles.adhkarActionButton}>
+              <Text style={styles.adhkarActionLabel}>Share</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
     </>
   );
   return onPress ? (
@@ -804,8 +980,19 @@ function createStyles(colors: WorshipPalette) {
     toolTabActive: { backgroundColor: colors.accent },
     toolTabLabel: { color: colors.muted, fontSize: 11, fontWeight: '600' },
     toolTabLabelActive: { color: colors.accentInk },
-    hadithCard: { position: 'relative', overflow: 'hidden', backgroundColor: colors.surface, borderRadius: 17, borderWidth: 1, borderColor: colors.line, padding: 18, paddingLeft: 21, minHeight: 205 },
+    hadithCard: { position: 'relative', overflow: 'hidden', backgroundColor: 'transparent', borderRadius: 17, borderWidth: 1, borderColor: colors.line, padding: 18, paddingLeft: 21, minHeight: 205 },
+    photoBackground: { ...StyleSheet.absoluteFill, width: '100%', height: '100%' },
+    hadithScrim: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(5, 18, 19, 0.64)' },
     cardAccent: { position: 'absolute', left: 0, top: 17, bottom: 17, width: 3, borderRadius: 2, backgroundColor: colors.gold },
+    photoCardEyebrow: { color: '#F3DEAE', fontSize: 9, fontWeight: '700', letterSpacing: 1.2 },
+    photoCardTitle: { color: '#FFFFFF', fontSize: 19, fontWeight: '700', marginTop: 12 },
+    photoCardSummary: { color: '#FFFFFF', fontSize: 13, lineHeight: 20, marginTop: 10 },
+    photoCardReference: { color: '#F3DEAE', fontSize: 10, lineHeight: 16, marginTop: 11 },
+    photoCardDisclosure: { color: '#FFFFFF', opacity: 0.82, fontSize: 9, lineHeight: 14, marginTop: 5 },
+    detailDialog: { width: '100%', maxWidth: 440, padding: 20, borderRadius: 20, backgroundColor: colors.surface },
+    detailTitle: { color: colors.ink, fontSize: 20, fontWeight: '700', marginTop: 8 },
+    detailActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 16 },
+    closeDetailButton: { alignSelf: 'flex-end', minHeight: 36, justifyContent: 'center', paddingHorizontal: 10, marginTop: 4 },
     cardEyebrow: { color: colors.muted, fontSize: 9, fontWeight: '700', letterSpacing: 1.2 },
     cardTitle: { color: colors.accent, fontSize: 19, fontWeight: '600', marginTop: 12 },
     cardSummary: { color: colors.ink, fontSize: 13, lineHeight: 20, marginTop: 10 },
@@ -875,6 +1062,9 @@ function createStyles(colors: WorshipPalette) {
     periodLabel: { color: colors.muted, fontSize: 11, fontWeight: '600' },
     periodLabelActive: { color: colors.accent, fontWeight: '700' },
     adhkarCard: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line, borderRadius: 15, padding: 15, marginTop: 10 },
+    adhkarActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 12, paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line },
+    adhkarActionButton: { minHeight: 36, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 18, backgroundColor: colors.surfaceRaised },
+    adhkarActionLabel: { color: colors.accent, fontSize: 10, fontWeight: '700' },
     adhkarHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
     repeatPill: { color: colors.accent, backgroundColor: colors.surfaceRaised, borderRadius: 12, overflow: 'hidden', paddingHorizontal: 9, paddingVertical: 4, fontSize: 10, fontWeight: '700' },
     transliteration: { color: colors.accent, fontSize: 12, lineHeight: 19, marginTop: 11 },

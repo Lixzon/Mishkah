@@ -65,9 +65,12 @@ import {
 import { schedulePrayerReminders } from './src/services/notifications';
 import { VoiceSearchButton } from './src/components/VoiceSearchButton';
 import { WorshipHub, type WorshipTab } from './src/components/WorshipHub';
+import { StoryReader } from './src/components/StoryReader';
 import { GuidanceHub } from './src/components/GuidanceHub';
 import { HISN_AL_MUSLIM_DUAS } from './src/domain/adhkar';
 import { getDailyHadith } from './src/domain/hadith';
+import { getDailyQuranJourney } from './src/domain/dailyQuranJourney';
+import { STORIES } from './src/domain/stories';
 import { resetPostSalahCounts } from './src/domain/tasbeeh';
 import { getDailyVerse, type DailyVerse } from './src/services/dailyVerse';
 import { searchRafiqOnline, type RafiqOnlineAnswer } from './src/services/rafiq';
@@ -317,6 +320,7 @@ export default function App() {
   const [dailyVerse, setDailyVerse] = useState<DailyVerse | null>(null);
   const [dailyVerseError, setDailyVerseError] = useState('');
   const [refreshingVerse, setRefreshingVerse] = useState(false);
+  const [journeyStory, setJourneyStory] = useState<(typeof STORIES)[number] | null>(null);
   const rafiqApiUrl = String(Constants.expoConfig?.extra?.rafiqApiUrl ?? '').trim();
   const syncConfigured = isCrossDeviceSyncConfigured();
   const supabaseConfigured = isSupabaseSyncConfigured();
@@ -454,12 +458,46 @@ export default function App() {
     }
   }, [localDate]);
   const dailyHadith = getDailyHadith(now);
+  const dailyJourney = getDailyQuranJourney(now);
   const [duaYear, duaMonth, duaDay] = localDate.split('-').map(Number);
   const duaDayOfYear = localDate
     ? Math.floor((Date.UTC(duaYear, duaMonth - 1, duaDay) - Date.UTC(duaYear, 0, 1)) / 86_400_000)
     : 0;
   const dailyDua = HISN_AL_MUSLIM_DUAS[duaDayOfYear % HISN_AL_MUSLIM_DUAS.length];
   const furqanBaseUrl = String(Constants.expoConfig?.extra?.furqanBaseUrl ?? '').trim().replace(/\/$/, '');
+
+  useEffect(() => {
+    const handleJourneyUrl = (url: string | null | undefined) => {
+      if (!url) return;
+      const match = /[?&]journeyStory=([^&#]*)/.exec(url);
+      if (!match) return;
+      let storyId: string;
+      try {
+        storyId = decodeURIComponent(match[1]);
+      } catch {
+        setNotice('That daily journey link is malformed.');
+        return;
+      }
+      const story = STORIES.find((entry) => entry.id === storyId);
+      if (!story) {
+        setNotice('That daily journey story is not available in this version of Mishkah.');
+        return;
+      }
+      setJourneyStory(story);
+      setScreen('Prayer');
+    };
+
+    if (Platform.OS === 'web') {
+      handleJourneyUrl(window.location.href);
+    } else {
+      void Linking.getInitialURL()
+        .then(handleJourneyUrl)
+        .catch((error: unknown) => setNotice(`The daily journey link could not be opened: ${friendlyError(error, 'link handling is unavailable')}`));
+    }
+
+    const subscription = Linking.addEventListener('url', ({ url }) => handleJourneyUrl(url));
+    return () => subscription.remove();
+  }, []);
 
   const refreshDailyVerse = useCallback(async (forceRefresh = false) => {
     setRefreshingVerse(true);
@@ -1297,6 +1335,43 @@ export default function App() {
                   </Pressable>
                 </View>
               ) : null}
+              <View style={styles.dailyHighlightCard}>
+                <Text style={styles.highlightEyebrow}>DAILY QUR’AN JOURNEY · SHARED WITH FURQAN</Text>
+                <Text style={styles.highlightTitle}>The story of {dailyJourney.story.title}</Text>
+                <Text style={styles.highlightBody}>
+                  Read related Qur’an passages in Furqan, the long story here, then pause for a short reflection.
+                </Text>
+                <View style={styles.choiceRow}>
+                  {dailyJourney.story.quranRefs.map((reference) => (
+                    <Pressable
+                      accessibilityRole="link"
+                      key={`${reference.surah}:${reference.from}`}
+                      onPress={() => {
+                        if (!furqanBaseUrl) {
+                          setNotice('The Furqan reader is not configured for this build.');
+                          return;
+                        }
+                        void openSupportLink(`${furqanBaseUrl}/surah/${reference.surah}?ayah=${reference.from}`);
+                      }}
+                      style={styles.choice}
+                    >
+                      <Text style={styles.choiceText}>
+                        {reference.surah}:{reference.from}{reference.to && reference.to !== reference.from ? `–${reference.to}` : ''} ›
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Text style={styles.highlightEyebrow}>A SHORT REFLECTION</Text>
+                <Text style={styles.highlightBody}>{dailyJourney.reflection}</Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Read the long story of ${dailyJourney.story.title}`}
+                  onPress={() => setJourneyStory(dailyJourney.story)}
+                  style={styles.retryVerseButton}
+                >
+                  <Text style={styles.highlightLink}>Read the long story ›</Text>
+                </Pressable>
+              </View>
               <Pressable
                 accessibilityRole="button"
                 onPress={() => {
@@ -2071,6 +2146,14 @@ export default function App() {
           </View>
           </Animated.View>
         </ScrollView>
+        <StoryReader
+          story={journeyStory}
+          palette={palette}
+          furqanBaseUrl={furqanBaseUrl}
+          initialMode="long"
+          onClose={() => setJourneyStory(null)}
+          onNotice={setNotice}
+        />
         {!isWideLayout ? (
         <View style={styles.bottomNav}>
           {PRIMARY_TABS.map((tab) => {

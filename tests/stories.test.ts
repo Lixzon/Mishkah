@@ -6,6 +6,7 @@ import {
   searchStories,
   storiesInSection,
 } from '../src/domain/stories';
+import { getDailyQuranJourney } from '../src/domain/dailyQuranJourney';
 
 describe('story library', () => {
   it('keeps ids unique and every section populated', () => {
@@ -42,5 +43,21 @@ describe('story library', () => {
     assert.deepEqual(searchStories('bilal').map((story) => story.id), ['bilal']);
     assert.deepEqual(searchStories('dajjal', 'signs').map((story) => story.id), ['dajjal']);
     assert.deepEqual(searchStories('nothing matches this'), []);
+  });
+
+  it('keeps the guided journey stable per UTC day and rotates through Quran-linked stories', () => {
+    const first = new Date('2026-11-09T00:15:00Z');
+    const sameUtcDay = new Date('2026-11-09T23:45:00Z');
+    assert.equal(getDailyQuranJourney(first).story.id, getDailyQuranJourney(sameUtcDay).story.id);
+
+    const journeys = Array.from({ length: 12 }, (_, day) =>
+      getDailyQuranJourney(new Date(first.getTime() + day * 86_400_000)),
+    );
+    assert.equal(new Set(journeys.map(({ story }) => story.id)).size, 12);
+    for (const { story, reflection } of journeys) {
+      assert.ok(story.quranRefs.length > 0, `${story.id} should link to Qur’an passages`);
+      assert.ok(story.long.length > 0, `${story.id} should have a long reading`);
+      assert.ok(reflection.length > 80, `${story.id} should include a short reflection reading`);
+    }
   });
 });
