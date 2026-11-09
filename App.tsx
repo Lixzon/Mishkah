@@ -4,6 +4,7 @@ import * as Crypto from 'expo-crypto';
 import * as SplashScreen from 'expo-splash-screen';
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import {
+  Alert,
   ActivityIndicator,
   Animated,
   AppState,
@@ -77,12 +78,24 @@ import { searchRafiqOnline, type RafiqOnlineAnswer } from './src/services/rafiq'
 import {
   createPairCode,
   forgetPairCode,
+  getCloudUserEmail,
   getSavedPairCode,
   isPairingCodeRevokedError,
   isSupabaseSyncConfigured,
   joinPairCode,
+  readCloudBackup,
+  requestEmailCode,
   revokePairCode,
+  signOutCloudAccount,
+  verifyEmailCode,
+  writeCloudBackup,
 } from './src/services/cloudSync';
+import {
+  createMishkahCloudBackup,
+  enableAutomaticCloudBackup,
+  isAutomaticCloudBackupEnabled,
+  restoreMishkahCloudBackup,
+} from './src/services/cloudBackup';
 import {
   flushSyncQueue,
   isCrossDeviceSyncConfigured,
@@ -317,6 +330,15 @@ export default function App() {
   const [pairMessage, setPairMessage] = useState('');
   const [pairBusy, setPairBusy] = useState(false);
   const [revokeConfirmVisible, setRevokeConfirmVisible] = useState(false);
+  const [backupEmail, setBackupEmail] = useState('');
+  const [backupCode, setBackupCode] = useState('');
+  const [backupCodeSent, setBackupCodeSent] = useState(false);
+  const [accountEmail, setAccountEmail] = useState<string | null>(null);
+  const [cloudBackupExists, setCloudBackupExists] = useState(false);
+  const [cloudBackupUpdatedAt, setCloudBackupUpdatedAt] = useState<string | null>(null);
+  const [cloudBackupReady, setCloudBackupReady] = useState(false);
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [backupMessage, setBackupMessage] = useState('');
   const [dailyVerse, setDailyVerse] = useState<DailyVerse | null>(null);
   const [dailyVerseError, setDailyVerseError] = useState('');
   const [refreshingVerse, setRefreshingVerse] = useState(false);
@@ -800,6 +822,129 @@ export default function App() {
     }
   };
 
+  const loadCloudBackupForAccount = async (email: string) => {
+    const remote = await readCloudBackup('mishkah');
+    setCloudBackupExists(Boolean(remote));
+    setCloudBackupUpdatedAt(remote?.updated_at ?? null);
+    const enabled = await isAutomaticCloudBackupEnabled(email);
+    if (!remote) {
+      await writeCloudBackup('mishkah', await createMishkahCloudBackup());
+      await enableAutomaticCloudBackup(email);
+      setCloudBackupExists(true);
+      setCloudBackupUpdatedAt(new Date().toISOString());
+      setCloudBackupReady(true);
+      setBackupMessage('Your first Mishkah cloud backup is saved. Future settings and streak changes back up automatically.');
+      return;
+    }
+    setCloudBackupReady(enabled);
+    setBackupMessage(
+      enabled
+        ? 'Automatic cloud backup is active for this account.'
+        : 'A cloud backup exists. Restore it on this device or replace it with this device’s data.',
+    );
+  };
+
+  const sendBackupCode = async () => {
+    setBackupBusy(true);
+    setBackupMessage('');
+    try {
+      await requestEmailCode(backupEmail);
+      setBackupCodeSent(true);
+      setBackupMessage('A one-time sign-in code was sent to your email.');
+    } catch (error) {
+      setBackupMessage(friendlyError(error, 'Could not send the sign-in code.'));
+    } finally {
+      setBackupBusy(false);
+    }
+  };
+
+  const verifyBackupCode = async () => {
+    setBackupBusy(true);
+    setBackupMessage('');
+    try {
+      const email = await verifyEmailCode(backupEmail, backupCode);
+      setAccountEmail(email);
+      setBackupEmail(email);
+      setBackupCode('');
+      setBackupCodeSent(false);
+      await loadCloudBackupForAccount(email);
+    } catch (error) {
+      setBackupMessage(friendlyError(error, 'Could not verify the email code.'));
+    } finally {
+      setBackupBusy(false);
+    }
+  };
+
+  const backUpThisDevice = async () => {
+    if (!accountEmail) return;
+    if (cloudBackupExists && !cloudBackupReady) {
+      const replace = Platform.OS === 'web'
+        ? window.confirm('Replace the existing Mishkah cloud backup with the data on this device?')
+        : await new Promise<boolean>((resolve) => {
+            Alert.alert(
+              'Replace cloud backup?',
+              'This will replace the existing Mishkah cloud backup with the data on this device.',
+              [
+                { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+                { text: 'Replace backup', style: 'destructive', onPress: () => resolve(true) },
+              ],
+              { cancelable: true, onDismiss: () => resolve(false) },
+            );
+          });
+      if (!replace) return;
+    }
+    setBackupBusy(true);
+    setBackupMessage('');
+    try {
+      await writeCloudBackup('mishkah', await createMishkahCloudBackup());
+      await enableAutomaticCloudBackup(accountEmail);
+      setCloudBackupExists(true);
+      setCloudBackupReady(true);
+      setCloudBackupUpdatedAt(new Date().toISOString());
+      setBackupMessage('This device is backed up. Future settings and streak changes will sync automatically.');
+    } catch (error) {
+      setBackupMessage(friendlyError(error, 'Could not back up this device.'));
+    } finally {
+      setBackupBusy(false);
+    }
+  };
+
+  const restoreCloudBackup = async () => {
+    setBackupBusy(true);
+    setBackupMessage('');
+    try {
+      const remote = await readCloudBackup('mishkah');
+      if (!remote) throw new Error('There is no Mishkah cloud backup for this account yet.');
+      const restoredPreferences = await restoreMishkahCloudBackup(remote.payload);
+      setPreferences(restoredPreferences);
+      setSyncState(await readSyncState());
+      if (!accountEmail) throw new Error('The signed-in email is unavailable.');
+      await enableAutomaticCloudBackup(accountEmail);
+      setCloudBackupReady(true);
+      setCloudBackupExists(true);
+      setCloudBackupUpdatedAt(remote.updated_at);
+      setBackupMessage('Mishkah settings and streak restored. Automatic backup is now active.');
+    } catch (error) {
+      setBackupMessage(friendlyError(error, 'Could not restore the cloud backup.'));
+    } finally {
+      setBackupBusy(false);
+    }
+  };
+
+  const signOutBackupAccount = async () => {
+    setBackupBusy(true);
+    try {
+      await signOutCloudAccount();
+      setAccountEmail(null);
+      setCloudBackupReady(false);
+      setBackupMessage('Signed out. Your local app data was not changed.');
+    } catch (error) {
+      setBackupMessage(friendlyError(error, 'Could not sign out.'));
+    } finally {
+      setBackupBusy(false);
+    }
+  };
+
   const runSystemReport = async () => {
     setReportBusy(true);
     try {
@@ -837,6 +982,37 @@ export default function App() {
       setNotice('This support link could not be opened on your device.');
     }
   };
+
+  useEffect(() => {
+    if (!isReady || !supabaseConfigured) return;
+    let active = true;
+    void getCloudUserEmail()
+      .then(async (email) => {
+        if (!active || !email) return;
+        setAccountEmail(email);
+        setBackupEmail(email);
+        await loadCloudBackupForAccount(email);
+      })
+      .catch((error: unknown) => {
+        if (active) setBackupMessage(friendlyError(error, 'Could not load the cloud backup account.'));
+      });
+    return () => {
+      active = false;
+    };
+  }, [isReady, supabaseConfigured]);
+
+  useEffect(() => {
+    if (!isReady || !supabaseConfigured || !cloudBackupReady || !accountEmail) return;
+    const timer = setTimeout(() => {
+      void createMishkahCloudBackup()
+        .then((backup) => writeCloudBackup('mishkah', backup))
+        .then(() => setCloudBackupUpdatedAt(new Date().toISOString()))
+        .catch((error: unknown) => {
+          setBackupMessage(friendlyError(error, 'Automatic cloud backup failed. Your data remains on this device.'));
+        });
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [isReady, supabaseConfigured, cloudBackupReady, accountEmail, preferences, syncState?.streak]);
 
   const openFurqan = async () => {
     await openSupportLink(furqanBaseUrl);
@@ -1945,6 +2121,102 @@ export default function App() {
                 <Text style={styles.helperText}>
                   Reminders are calculated offline for the next 14 days. Notification permission is required on iOS and Android.
                 </Text>
+              </View>
+              <View style={styles.settingsCard}>
+                <Text style={styles.settingGroupTitle}>Cloud backup and restore</Text>
+                <Text style={styles.settingDescription}>
+                  Sign in with an email code to keep Mishkah settings, prayer and dhikr progress, and your streak backed up for a new device. Your Furqan backup is stored separately under the same email account.
+                </Text>
+                {!supabaseConfigured ? (
+                  <Text style={styles.syncMeta}>
+                    Cloud backup is unavailable until this build is configured with the shared Supabase project. Your data stays on this device.
+                  </Text>
+                ) : accountEmail ? (
+                  <>
+                    <View style={styles.syncCard}>
+                      <Text style={styles.syncLabel}>SIGNED IN</Text>
+                      <Text style={styles.syncValue}>{accountEmail}</Text>
+                      <Text style={styles.syncMeta}>
+                        {cloudBackupExists && cloudBackupUpdatedAt
+                          ? `Last cloud backup: ${new Date(cloudBackupUpdatedAt).toLocaleString()}`
+                          : 'No cloud backup is available yet.'}
+                      </Text>
+                    </View>
+                    {cloudBackupExists && !cloudBackupReady ? (
+                      <ActionButton
+                        label="Restore cloud backup to this device"
+                        onPress={() => void restoreCloudBackup()}
+                        palette={palette}
+                        styles={styles}
+                        disabled={backupBusy}
+                        busy={backupBusy}
+                      />
+                    ) : null}
+                    <ActionButton
+                      label={cloudBackupExists ? 'Replace cloud backup with this device' : 'Back up this device now'}
+                      onPress={() => void backUpThisDevice()}
+                      palette={palette}
+                      styles={styles}
+                      disabled={backupBusy}
+                      busy={backupBusy}
+                    />
+                    <ActionButton
+                      label="Sign out of cloud backup"
+                      onPress={() => void signOutBackupAccount()}
+                      palette={palette}
+                      styles={styles}
+                      disabled={backupBusy}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <TextInput
+                      accessibilityLabel="Backup account email"
+                      autoCapitalize="none"
+                      autoComplete="email"
+                      autoCorrect={false}
+                      keyboardType="email-address"
+                      onChangeText={setBackupEmail}
+                      placeholder="Email address"
+                      placeholderTextColor={palette.muted}
+                      style={styles.guideInput}
+                      value={backupEmail}
+                      editable={!backupBusy && !backupCodeSent}
+                    />
+                    <ActionButton
+                      label={backupBusy ? 'Sending code…' : 'Send email sign-in code'}
+                      onPress={() => void sendBackupCode()}
+                      palette={palette}
+                      styles={styles}
+                      disabled={backupBusy || !backupEmail.trim()}
+                      busy={backupBusy}
+                    />
+                    {backupCodeSent ? (
+                      <>
+                        <TextInput
+                          accessibilityLabel="Email sign-in code"
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          keyboardType="number-pad"
+                          onChangeText={setBackupCode}
+                          placeholder="One-time code from your email"
+                          placeholderTextColor={palette.muted}
+                          style={styles.guideInput}
+                          value={backupCode}
+                        />
+                        <ActionButton
+                          label={backupBusy ? 'Verifying…' : 'Verify code'}
+                          onPress={() => void verifyBackupCode()}
+                          palette={palette}
+                          styles={styles}
+                          disabled={backupBusy || !backupCode.trim()}
+                          busy={backupBusy}
+                        />
+                      </>
+                    ) : null}
+                  </>
+                )}
+                {backupMessage ? <Text style={styles.healthMessage}>{backupMessage}</Text> : null}
               </View>
               <View style={styles.settingsCard}>
                 <Text style={styles.settingGroupTitle}>Pair with Furqan</Text>

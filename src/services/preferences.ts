@@ -101,7 +101,7 @@ function normalizeCustomDhikr(value: unknown): CustomDhikr[] {
     .filter((item) => item.label.length > 0);
 }
 
-function normalizePreferences(value: unknown): AppPreferences {
+export function normalizeAppPreferences(value: unknown): AppPreferences {
   if (typeof value !== 'object' || value === null) {
     return { ...DEFAULT_PREFERENCES, pinnedCityIds: [...DEFAULT_PREFERENCES.pinnedCityIds] };
   }
@@ -180,7 +180,7 @@ export async function loadPreferences(): Promise<AppPreferences> {
   const stored = await AsyncStorage.getItem(PREFERENCES_KEY);
   return stored === null
     ? { ...DEFAULT_PREFERENCES, pinnedCityIds: [...DEFAULT_PREFERENCES.pinnedCityIds] }
-    : normalizePreferences(JSON.parse(stored));
+    : normalizeAppPreferences(JSON.parse(stored));
 }
 
 let preferenceWriteQueue: Promise<void> = Promise.resolve();

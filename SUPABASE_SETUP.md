@@ -1,6 +1,6 @@
-﻿# Mishkah <-> Furqan pairing sync
+# Mishkah <-> Furqan sync and cloud backup
 
-Mishkah and Furqan share progress through one private pairing code. There is no account sign-in in either app.
+Mishkah and Furqan can share progress through a private pairing code and back up each app's data to one email account. Pairing and account backup are separate: pairing does not create or recover an account.
 
 ## Configure the project
 
@@ -14,10 +14,13 @@ Apply these pairing migrations from the Furqan repository to the shared project,
 
 - `supabase/migrations/20261109130000_lixzon_pair_sync.sql`
 - `supabase/migrations/20261109210200_lixzon_revoke_pair.sql`
+- `supabase/migrations/20261110120000_lixzon_user_backups.sql`
 
 The earlier `20261108150000_lixzon_sync_records.sql` migration belongs to the old authenticated-record sync path and is not required for pairing. If it is already installed, leave it in place; pairing uses its separate `lixzon_sync_pairs` and `lixzon_paired_sync_records` tables.
 
-No Auth provider or redirect URL is required. Without these settings, Mishkah stays local-only and never claims that sync is active.
+Enable Supabase Auth's Email provider. Set its email template to include the one-time token as `{{ .Token }}` (rather than requiring a magic-link redirect); both apps verify the code in-app, so no redirect URL is needed. The client only uses the publishable/anon key; never put a `service_role` key in either build.
+
+Without these environment variables, migrations, and the Email provider, pairing and cloud backup remain unavailable and local data stays on the device.
 
 ## What Mishkah reads and writes
 
@@ -28,6 +31,12 @@ No Auth provider or redirect URL is required. Without these settings, Mishkah st
 The pairing code is stored in SecureStore on native and in AsyncStorage on web. **Disconnect this device** removes the code locally while other devices remain paired. **Revoke pairing everywhere** invalidates the code and deletes shared cloud records; each device keeps its local data and can pair again with a new code.
 
 Any number of trusted app installations can use the same code. Each new code creates an isolated sync space, so different codes do not mix data. Treat each code like a password.
+
+## Email cloud backup
+
+Sign in from Settings using a one-time email code. Mishkah automatically backs up its preferences, prayer/checklist and dhikr progress, and reading streak. Furqan stores its own separate backup under the same email account, including Quran reading progress, bookmarks, memorized ayahs, likes, playlists, theme, and settings. Each app keeps its own backup row; signing in does not pair the apps.
+
+When a cloud backup already exists on a new device, choose **Restore cloud backup to this device** or explicitly replace the cloud copy with the data on this device. After restoring or creating the first backup, saved changes are backed up automatically. Pairing codes, authentication tokens, and downloaded media are not included. Each backup is limited to 1 MB; use the existing file export/import for larger Furqan backups.
 
 ## In-app report
 
