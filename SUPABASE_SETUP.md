@@ -24,11 +24,12 @@ Without these environment variables, migrations, and the Email provider, pairing
 
 ## What Mishkah reads and writes
 
-- Reads `furqan.progression` for the reading streak shown in the header, profile, and streak sheet.
+- Reads `furqan.progression` for Furqan's reading streak, latest reading position, and saved-verse references.
+- Reads `furqan.memorized:<surah>:<ayah>` for memorization progress and shows the shared Quran library summary on Home.
 - Reads `quran.daily-highlight:<date>` so the verse of the day matches Furqan exactly.
 - Writes `mishkah.engagement` with its own streak and unlocked features when paired.
 
-The daily verse uses a UTC date key so the paired apps show the same verse even when devices are in different time zones. Furqan publishes the shared verse record, and both apps refresh paired data automatically.
+The daily verse, weekly surah spotlight, and daily Quran journey use matching UTC-based selections in both apps. Mishkah also links to Furqan's Friday Al-Kahf reading recommendation. The daily verse uses a UTC date key so the paired apps show the same verse even when devices are in different time zones. Furqan publishes the shared verse and Quran progress records, and both apps refresh paired data automatically.
 
 The pairing code is stored in SecureStore on native and in AsyncStorage on web. **Disconnect this device** removes the code locally while other devices remain paired. **Revoke pairing everywhere** invalidates the code and deletes shared cloud records; each device keeps its local data and can pair again with a new code.
 

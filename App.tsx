@@ -102,7 +102,11 @@ import {
   unlinkPairedAccount,
   type SyncState,
 } from './src/services/syncEngine';
-import { readPairedHighlight, syncPairedData } from './src/services/pairSync';
+import {
+  readPairedHighlight,
+  syncPairedData,
+  type PairedQuranProgress,
+} from './src/services/pairSync';
 import {
   createSystemReport,
   discardStoredSystemReport,
@@ -118,6 +122,51 @@ const PRIMARY_TABS: readonly { screen: PrimaryScreen; label: string; icon: strin
   { screen: 'Guide', label: 'Guidance', icon: '✦' },
   { screen: 'More', label: 'Profile', icon: '◉' },
 ];
+
+const FASTING_GUIDANCE = [
+  {
+    title: 'Ramadan',
+    type: 'Obligatory',
+    detail: 'Fasting is obligatory for eligible Muslims. Exemptions and make-up fasts depend on personal circumstances.',
+    source: 'Qur’an 2:183–185',
+  },
+  {
+    title: 'Mondays and Thursdays',
+    type: 'Voluntary',
+    detail: 'Regularly observed voluntary fast days in the Sunnah.',
+    source: 'Sahih Muslim 1162 · Jami‘ at-Tirmidhi 747',
+  },
+  {
+    title: 'The white days · 13th–15th',
+    type: 'Voluntary',
+    detail: 'Three middle days of each Hijri month, except the 13th of Dhul-Hijjah, which is a day of Tashreeq.',
+    source: 'Sunan Abi Dawud 2449',
+  },
+  {
+    title: 'Six days of Shawwal',
+    type: 'Voluntary',
+    detail: 'Fast six days during Shawwal after Ramadan; do not fast on Eid al-Fitr.',
+    source: 'Sahih Muslim 1164',
+  },
+  {
+    title: 'Day of Arafah · 9 Dhul-Hijjah',
+    type: 'Voluntary',
+    detail: 'A recommended fast for those not performing Hajj.',
+    source: 'Sahih Muslim 1162',
+  },
+  {
+    title: 'Ashura · 10 Muharram',
+    type: 'Voluntary',
+    detail: 'A voluntary fast; some scholars recommend also fasting the 9th or 11th.',
+    source: 'Sahih al-Bukhari 2004 · Sahih Muslim 1132',
+  },
+  {
+    title: 'Every other day',
+    type: 'Voluntary',
+    detail: 'Known as the fast of Dawud; an optional pattern for those able to maintain it.',
+    source: 'Sahih al-Bukhari 1976 · Sahih Muslim 1159',
+  },
+] as const;
 
 function isPrimaryTabActive(tab: PrimaryScreen, screen: Screen): boolean {
   switch (tab) {
@@ -394,6 +443,11 @@ export default function App() {
   const [systemReport, setSystemReport] = useState<SystemReport | null>(null);
   const [reportBusy, setReportBusy] = useState(false);
   const [syncState, setSyncState] = useState<SyncState | null>(null);
+  const [pairedQuranProgress, setPairedQuranProgress] = useState<PairedQuranProgress>({
+    lastPosition: null,
+    bookmarks: [],
+    memorizedAyahs: [],
+  });
   const [pairCode, setPairCode] = useState<string | null>(null);
   const [pairEntry, setPairEntry] = useState('');
   const [pairMessage, setPairMessage] = useState('');
@@ -554,6 +608,8 @@ export default function App() {
   const weeklySurah = WEEKLY_SURAH_SPOTLIGHTS[weeklySpotlightIndex(now)];
   const quoteOfTheDay = getQuoteOfTheDay(now);
   const dailyJourney = getDailyQuranJourney(now);
+  const memorizedAyahs = pairedQuranProgress.memorizedAyahs.filter((item) => item.memorized);
+  const lastFurqanPosition = pairedQuranProgress.lastPosition;
   const isHomeScreen = screen === 'Prayer';
   const furqanBaseUrl = String(Constants.expoConfig?.extra?.furqanBaseUrl ?? '')
     .trim()
@@ -643,9 +699,10 @@ export default function App() {
     let active = true;
     const refresh = () => {
       void syncPairedData(new Date())
-        .then(async ({ state }) => {
+        .then(async ({ state, quranProgress }) => {
           if (!active) return;
           setSyncState(state);
+          setPairedQuranProgress(quranProgress);
           await refreshDailyVerse(false);
         })
         .catch((error: unknown) => {
@@ -787,6 +844,7 @@ export default function App() {
       setSyncState(next);
       const synced = await syncPairedData(new Date());
       setSyncState(synced.state);
+      setPairedQuranProgress(synced.quranProgress);
       await refreshDailyVerse(false);
       setPairMessage('Pairing code created. Enter it in Furqan to link the apps.');
     } catch (error) {
@@ -807,8 +865,9 @@ export default function App() {
       setSyncState(next);
       const synced = await syncPairedData(new Date());
       setSyncState(synced.state);
+      setPairedQuranProgress(synced.quranProgress);
       await refreshDailyVerse(false);
-      setPairMessage('Furqan is paired. Streak and the verse of the day now stay in sync.');
+      setPairMessage('Furqan is paired. Your streak, reading position, saved verses, memorized ayahs, and verse of the day now sync.');
     } catch (error) {
       setPairMessage(friendlyError(error, 'Could not join that pairing.'));
     } finally {
@@ -1007,6 +1066,7 @@ export default function App() {
       setSyncState(next);
       const synced = await syncPairedData(new Date());
       setSyncState(synced.state);
+      setPairedQuranProgress(synced.quranProgress);
       await refreshDailyVerse(false);
       setNotice(synced.state.status === 'synced' ? 'Mishkah and Furqan are in sync.' : 'Your queued updates are synced.');
     } catch (error) {
@@ -1453,25 +1513,6 @@ export default function App() {
                 <Text style={styles.dateText}>{friendlyDate(now, city.timeZone)}</Text>
               </View>
 
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Open mindful fasting routine"
-                onPress={() => setScreen('Fasting')}
-                style={[styles.softCard, styles.photoSoftCard]}
-              >
-                <Image
-                  source={HOME_PHOTO_SOURCES[(homePhotoIndex + 1) % HOME_PHOTO_SOURCES.length]}
-                  resizeMode="cover"
-                  style={StyleSheet.absoluteFill}
-                />
-                <View style={styles.softCardScrim} />
-                <View style={styles.photoSoftCardContent}>
-                  <Text style={styles.photoSoftCardSymbol}>☾</Text>
-                  <Text style={styles.photoSoftCardTitle}>A mindful fast</Text>
-                  <Text style={styles.photoSoftCardBody}>Your suhoor & iftar routine</Text>
-                </View>
-              </Pressable>
-
               <View style={styles.sectionHeading}>
                 <View>
                   <Text style={styles.sectionTitle}>Today’s QHD reminder</Text>
@@ -1550,6 +1591,81 @@ export default function App() {
                   </View>
                 </View>
               </View>
+
+              {pairCode ? (
+                <>
+                  <View style={styles.sectionHeading}>
+                    <View>
+                      <Text style={styles.sectionTitle}>Qur’an library and progress</Text>
+                      <Text style={styles.sectionCaption}>Shared with Furqan · updates while paired</Text>
+                    </View>
+                  </View>
+                  <View style={styles.pairedQuranCard}>
+                    <Text style={styles.pairedQuranEyebrow}>READING PROGRESS</Text>
+                    <View style={styles.pairedQuranStats}>
+                      <View style={styles.pairedQuranStat}>
+                        <Text style={styles.pairedQuranStatValue}>{memorizedAyahs.length}</Text>
+                        <Text style={styles.pairedQuranStatLabel}>Memorized ayahs</Text>
+                      </View>
+                      <View style={styles.pairedQuranStat}>
+                        <Text style={styles.pairedQuranStatValue}>{pairedQuranProgress.bookmarks.length}</Text>
+                        <Text style={styles.pairedQuranStatLabel}>Saved verses</Text>
+                      </View>
+                    </View>
+                    {lastFurqanPosition ? (
+                      <Pressable
+                        accessibilityRole="link"
+                        accessibilityLabel={`Continue reading ${lastFurqanPosition.name ?? `Surah ${lastFurqanPosition.surah}`} verse ${lastFurqanPosition.ayah} in Furqan`}
+                        onPress={() => {
+                          void openSupportLink(`${furqanBaseUrl}/surah/${lastFurqanPosition.surah}?ayah=${lastFurqanPosition.ayah}`);
+                        }}
+                        style={styles.pairedQuranAction}
+                      >
+                        <Text style={styles.pairedQuranActionTitle}>Continue reading in Furqan</Text>
+                        <Text style={styles.pairedQuranActionDetail}>
+                          {lastFurqanPosition.name ?? `Surah ${lastFurqanPosition.surah}`} · {lastFurqanPosition.surah}:{lastFurqanPosition.ayah} ›
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                    {pairedQuranProgress.bookmarks.slice(0, 3).map((bookmark) => (
+                      <Pressable
+                        accessibilityRole="link"
+                        key={`${bookmark.surah}:${bookmark.ayah}`}
+                        onPress={() => void openSupportLink(`${furqanBaseUrl}/surah/${bookmark.surah}?ayah=${bookmark.ayah}`)}
+                        style={styles.pairedQuranBookmark}
+                      >
+                        <Text style={styles.pairedQuranBookmarkText}>
+                          {bookmark.name ?? `Surah ${bookmark.surah}`} · {bookmark.surah}:{bookmark.ayah} ›
+                        </Text>
+                      </Pressable>
+                    ))}
+                    {memorizedAyahs.slice(0, 3).map((item) => (
+                      <Pressable
+                        accessibilityRole="link"
+                        key={`memorized:${item.id}`}
+                        onPress={() => void openSupportLink(`${furqanBaseUrl}/surah/${item.surah}?ayah=${item.ayah}`)}
+                        style={styles.pairedQuranBookmark}
+                      >
+                        <Text style={styles.pairedQuranBookmarkText}>
+                          Memorized · {item.surahName} · {item.surah}:{item.ayah} ›
+                        </Text>
+                      </Pressable>
+                    ))}
+                    {memorizedAyahs.length > 0 ? (
+                      <Text style={styles.pairedQuranNote}>
+                        Memorization progress is synced from your Furqan library.
+                      </Text>
+                    ) : null}
+                    {!lastFurqanPosition &&
+                    pairedQuranProgress.bookmarks.length === 0 &&
+                    memorizedAyahs.length === 0 ? (
+                      <Text style={styles.pairedQuranNote}>
+                        Reading position, saved verses, and memorized ayahs will appear here after Furqan shares your progress.
+                      </Text>
+                    ) : null}
+                  </View>
+                </>
+              ) : null}
 
               <View style={styles.sectionHeading}>
                 <View>
@@ -1681,18 +1797,104 @@ export default function App() {
                   <Text style={styles.photoCardLink}>Qur’an {weeklySurah.surah}:{weeklySurah.range} · Read in Furqan ›</Text>
                 </View>
               </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Open the Friday Qur’an reading, Surah Al-Kahf, in Furqan"
+                onPress={() => {
+                  void openSupportLink(`${furqanBaseUrl}/surah/18?ayah=1`);
+                }}
+                style={styles.quotePhotoCard}
+              >
+                <Image
+                  source={HOME_PHOTO_SOURCES[(homePhotoIndex + 4) % HOME_PHOTO_SOURCES.length]}
+                  resizeMode="cover"
+                  style={StyleSheet.absoluteFill}
+                />
+                <View style={styles.qhdPhotoScrim} />
+                <View style={styles.qhdPhotoContent}>
+                  <Text style={styles.photoCardEyebrow}>FRIDAY QUR’AN READING</Text>
+                  <Text style={styles.photoCardTitle}>Surah Al-Kahf</Text>
+                  <Text style={styles.photoCardBody}>Set aside time to read and reflect on the Qur’an’s account of faith, trials, and humility.</Text>
+                  <Text style={styles.photoCardLink}>Qur’an 18 · Read in Furqan ›</Text>
+                </View>
+              </Pressable>
 
               {isHomeScreen ? (
                 <>
-              <IslamicCalendarCard
-                cityName={city.name}
-                currentDate={islamicCalendar?.date ?? null}
-                error={islamicCalendar?.error ?? ''}
-                events={islamicCalendar?.events ?? []}
-                onNotice={setNotice}
-              />
-            </>
-          ) : null}
+                  <IslamicCalendarCard
+                    cityName={city.name}
+                    currentDate={islamicCalendar?.date ?? null}
+                    error={islamicCalendar?.error ?? ''}
+                    events={islamicCalendar?.events ?? []}
+                    onNotice={setNotice}
+                  />
+                  <View style={styles.sectionHeading}>
+                    <View>
+                      <Text style={styles.sectionTitle}>Fasting through the year</Text>
+                      <Text style={styles.sectionCaption}>Obligatory and voluntary days</Text>
+                    </View>
+                  </View>
+                  <View style={styles.fastingGuidanceCard}>
+                    <Text style={styles.fastingGuidanceIntro}>
+                      Ramadan is obligatory for eligible Muslims. The other fasts below are voluntary.
+                    </Text>
+                    {FASTING_GUIDANCE.map((item, index) => (
+                      <View
+                        key={item.title}
+                        style={[
+                          styles.fastingGuidanceRow,
+                          index === FASTING_GUIDANCE.length - 1 && styles.fastingGuidanceLastRow,
+                        ]}
+                      >
+                        <View style={styles.fastingGuidanceCopy}>
+                          <View style={styles.fastingGuidanceTitleRow}>
+                            <Text style={styles.fastingGuidanceTitle}>{item.title}</Text>
+                            <Text
+                              style={[
+                                styles.fastingGuidanceTag,
+                                item.type === 'Obligatory'
+                                  ? styles.fastingGuidanceObligatoryTag
+                                  : styles.fastingGuidanceVoluntaryTag,
+                              ]}
+                            >
+                              {item.type.toUpperCase()}
+                            </Text>
+                          </View>
+                          <Text style={styles.fastingGuidanceDetail}>{item.detail}</Text>
+                          <Text style={styles.fastingGuidanceSource}>{item.source}</Text>
+                        </View>
+                      </View>
+                    ))}
+                    <Text style={styles.fastingGuidanceNote}>
+                      Hijri dates can vary with local moon sighting. Do not fast on Eid al-Fitr, Eid al-Adha, or the days of Tashreeq (11th–13th Dhul-Hijjah), except for the specific Hajj concession. This is general information, not a personal ruling; ask a trusted scholar about your circumstances. (Sahih Muslim 1141)
+                    </Text>
+                  </View>
+                  <View style={styles.sectionHeading}>
+                    <View>
+                      <Text style={styles.sectionTitle}>Suhoor and iftar</Text>
+                      <Text style={styles.sectionCaption}>Build a mindful fasting routine</Text>
+                    </View>
+                  </View>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Open mindful fasting routine"
+                    onPress={() => setScreen('Fasting')}
+                    style={[styles.softCard, styles.photoSoftCard]}
+                  >
+                    <Image
+                      source={HOME_PHOTO_SOURCES[(homePhotoIndex + 1) % HOME_PHOTO_SOURCES.length]}
+                      resizeMode="cover"
+                      style={StyleSheet.absoluteFill}
+                    />
+                    <View style={styles.softCardScrim} />
+                    <View style={styles.photoSoftCardContent}>
+                      <Text style={styles.photoSoftCardSymbol}>☾</Text>
+                      <Text style={styles.photoSoftCardTitle}>A mindful fast</Text>
+                      <Text style={styles.photoSoftCardBody}>Open your suhoor, iftar, and checklist routine ›</Text>
+                    </View>
+                  </Pressable>
+                </>
+              ) : null}
           </>
           ) : null}
 
@@ -2494,7 +2696,7 @@ export default function App() {
                 <Text style={styles.settingGroupTitle}>Pair with Furqan</Text>
                 <Text style={styles.settingDescription}>
                   {syncConfigured
-                    ? 'Pair once with Furqan to keep your streak, memorized ayahs, and the Qur’an verse of the day in sync. No account sign-in is needed.'
+                    ? 'Pair once with Furqan to sync its reading streak, reading position, saved verses, memorized ayahs, and the Qur’an verse of the day. No account sign-in is needed.'
                     : 'Pairing is not switched on for this build. Everything else in Mishkah works offline.'}
                 </Text>
                 <View style={styles.syncCard}>
@@ -3282,6 +3484,58 @@ function createStyles(colors: Palette) {
     calendarEventRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10, marginTop: 9, borderTopWidth: 1, borderTopColor: colors.line },
     calendarEventTitle: { color: colors.ink, fontSize: 12, fontWeight: '600' },
     calendarEventCountdown: { color: colors.accent, fontSize: 11, fontWeight: '700' },
+    pairedQuranCard: {
+      paddingHorizontal: 16,
+      paddingVertical: 15,
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: colors.line,
+      backgroundColor: colors.surface,
+    },
+    pairedQuranEyebrow: { color: colors.gold, fontSize: 9, fontWeight: '700', letterSpacing: 0.9 },
+    pairedQuranStats: { flexDirection: 'row', gap: 12, marginTop: 12 },
+    pairedQuranStat: { flex: 1, padding: 11, borderRadius: 13, backgroundColor: colors.surfaceRaised },
+    pairedQuranStatValue: { color: colors.ink, fontSize: 18, fontWeight: '700' },
+    pairedQuranStatLabel: { color: colors.muted, fontSize: 9, marginTop: 3 },
+    pairedQuranAction: { paddingVertical: 12, marginTop: 7, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.line },
+    pairedQuranActionTitle: { color: colors.ink, fontSize: 11, fontWeight: '700' },
+    pairedQuranActionDetail: { color: colors.accent, fontSize: 10, fontWeight: '600', marginTop: 4 },
+    pairedQuranBookmark: { paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.line },
+    pairedQuranBookmarkText: { color: colors.accent, fontSize: 10, fontWeight: '600' },
+    pairedQuranNote: { color: colors.muted, fontSize: 9, lineHeight: 14, marginTop: 10 },
+    fastingGuidanceCard: {
+      paddingHorizontal: 16,
+      paddingTop: 15,
+      paddingBottom: 14,
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: colors.line,
+      backgroundColor: colors.surface,
+    },
+    fastingGuidanceIntro: { color: colors.muted, fontSize: 11, lineHeight: 17 },
+    fastingGuidanceRow: {
+      paddingVertical: 12,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.line,
+    },
+    fastingGuidanceLastRow: { borderBottomWidth: 0 },
+    fastingGuidanceCopy: { flex: 1 },
+    fastingGuidanceTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+    fastingGuidanceTitle: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: '700' },
+    fastingGuidanceTag: { overflow: 'hidden', paddingHorizontal: 7, paddingVertical: 4, borderRadius: 9, fontSize: 7, fontWeight: '700', letterSpacing: 0.6 },
+    fastingGuidanceObligatoryTag: { color: colors.accent, backgroundColor: colors.goldTint },
+    fastingGuidanceVoluntaryTag: { color: colors.muted, backgroundColor: colors.surfaceRaised },
+    fastingGuidanceDetail: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 5 },
+    fastingGuidanceSource: { color: colors.accent, fontSize: 8, lineHeight: 12, marginTop: 4 },
+    fastingGuidanceNote: {
+      color: colors.muted,
+      fontSize: 9,
+      lineHeight: 14,
+      backgroundColor: colors.surfaceRaised,
+      padding: 10,
+      borderRadius: 12,
+      marginTop: 3,
+    },
     highlightArabic: { color: colors.ink, fontSize: 19, lineHeight: 34, textAlign: 'right', writingDirection: 'rtl', marginTop: 12 },
     highlightLink: { color: colors.accent, fontSize: 10, fontWeight: '700', marginTop: 12 },
     retryVerseButton: { alignSelf: 'flex-start', marginTop: 5 },
