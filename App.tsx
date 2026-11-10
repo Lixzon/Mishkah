@@ -2701,16 +2701,16 @@ export default function App() {
                 </Text>
                 <View style={styles.syncCard}>
                   <Text style={styles.syncLabel}>Status</Text>
-                  <Text style={styles.syncValue}>{pairCode ? 'Paired with Furqan' : 'Local-only mode'}</Text>
+                  <Text style={styles.syncValue}>{pairCode && syncConfigured ? 'Paired with Furqan' : 'Local-only mode'}</Text>
                   <Text style={styles.syncMeta}>{syncState?.status ?? 'idle'} · {syncState?.queuedCount ?? 0} queued updates</Text>
-                  {pairCode ? <Text style={styles.syncMeta}>Pairing code {pairCode}</Text> : null}
+                  {pairCode && syncConfigured ? <Text style={styles.syncMeta}>Pairing code {pairCode}</Text> : null}
                   {!syncConfigured ? (
                     <Text style={styles.syncMeta}>
                       The app needs a shared sync project before a code can be created. Your data stays on this device.
                     </Text>
                   ) : null}
                 </View>
-                {!syncConfigured ? null : pairCode ? (
+                {pairCode && syncConfigured ? (
                   <View style={styles.pairActions}>
                     <ActionButton
                       label={syncConfigured ? 'Sync now' : 'Sync unavailable'}
@@ -2752,6 +2752,7 @@ export default function App() {
                       onChangeText={setPairEntry}
                       placeholder="Enter Furqan’s 20-character code"
                       placeholderTextColor={palette.muted}
+                      editable={syncConfigured}
                       style={styles.guideInput}
                       value={pairEntry}
                     />
@@ -2903,9 +2904,9 @@ export default function App() {
             </View>
             <View style={styles.syncCard}>
               <Text style={styles.syncLabel}>PAIRING STATUS</Text>
-              <Text style={styles.syncValue}>{pairCode ? 'Paired with Furqan' : 'Local-only mode'}</Text>
+              <Text style={styles.syncValue}>{pairCode && syncConfigured ? 'Paired with Furqan' : 'Local-only mode'}</Text>
               <Text style={styles.syncMeta}>
-                {pairCode ? `Pairing code ${pairCode}` : 'Your settings remain on this device.'}
+                {pairCode && syncConfigured ? `Pairing code ${pairCode}` : 'Your settings remain on this device.'}
               </Text>
               {!syncConfigured ? (
                 <Text style={styles.syncMeta}>
@@ -2913,7 +2914,7 @@ export default function App() {
                 </Text>
               ) : null}
             </View>
-            {!syncConfigured ? null : pairCode ? (
+            {pairCode && syncConfigured ? (
               <View style={styles.pairActions}>
                 <ActionButton
                   label={syncConfigured ? 'Sync now' : 'Sync unavailable'}
@@ -2955,6 +2956,7 @@ export default function App() {
                   onChangeText={setPairEntry}
                   placeholder="Enter Furqan’s 20-character code"
                   placeholderTextColor={palette.muted}
+                  editable={syncConfigured}
                   style={styles.guideInput}
                   value={pairEntry}
                 />
