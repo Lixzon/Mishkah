@@ -10,35 +10,21 @@ export interface SystemReportItem {
 }
 
 export interface SystemReport {
-  generatedAt: number;
+  startedAt: number;
+  finishedAt: number;
+  durationMs: number;
   items: SystemReportItem[];
 }
 
-const REPORT_KEY = 'mishkah.system-report.v1';
+const LEGACY_REPORT_KEY = 'mishkah.system-report.v1';
 const PROBE_KEY = 'mishkah.system-report.probe';
 
-export async function readLastSystemReport(): Promise<SystemReport | null> {
-  const stored = await AsyncStorage.getItem(REPORT_KEY);
-  if (!stored) return null;
-  try {
-    const parsed: unknown = JSON.parse(stored);
-    if (
-      typeof parsed === 'object' &&
-      parsed !== null &&
-      'generatedAt' in parsed &&
-      typeof parsed.generatedAt === 'number' &&
-      'items' in parsed &&
-      Array.isArray(parsed.items)
-    ) {
-      return parsed as SystemReport;
-    }
-  } catch {
-    return null;
-  }
-  return null;
+export async function discardStoredSystemReport(): Promise<void> {
+  await AsyncStorage.removeItem(LEGACY_REPORT_KEY);
 }
 
 export async function createSystemReport(): Promise<SystemReport> {
+  const startedAt = Date.now();
   const items: SystemReportItem[] = [];
 
   let storageOk = false;
@@ -89,7 +75,11 @@ export async function createSystemReport(): Promise<SystemReport> {
       : 'Waiting for Furqan’s daily verse record for today.',
   });
 
-  const report: SystemReport = { generatedAt: Date.now(), items };
-  await AsyncStorage.setItem(REPORT_KEY, JSON.stringify(report)).catch(() => undefined);
-  return report;
+  const finishedAt = Date.now();
+  return {
+    startedAt,
+    finishedAt,
+    durationMs: finishedAt - startedAt,
+    items,
+  };
 }

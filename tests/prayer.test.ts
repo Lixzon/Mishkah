@@ -165,10 +165,10 @@ describe('lazy city registry and pinned slots', () => {
 });
 
 describe('offline spiritual guide', () => {
-  it('answers from its local FAQ without a remote lookup', () => {
+  it('answers from its local FAQ and does not invent an unrelated answer', () => {
     assert.match(getLocalAnswer('How are my prayer times calculated?').answer, /on this device/);
     assert.match(getLocalAnswer('What if I am unsure about a fasting rule?').answer, /trusted local scholar/);
     assert.match(getLocalAnswer('Can I rely on this as a religious ruling?').answer, /not a fatwa/i);
-    assert.match(getLocalAnswer('an unfamiliar question').answer, /on this device/);
+    assert.match(getLocalAnswer('an unfamiliar question').answer, /could not find a close answer/i);
   });
 });

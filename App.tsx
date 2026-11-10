@@ -1,6 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
 import Constants from 'expo-constants';
-import * as Crypto from 'expo-crypto';
 import * as SplashScreen from 'expo-splash-screen';
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import {
@@ -24,9 +23,9 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { getLocalAnswer, getLocalFaqs } from './src/domain/assistant';
-  DEFAULT_CITY_ID,
+import { getContextualAnswer, getLocalAnswer, getLocalFaqs } from './src/domain/assistant';
 import {
+  DEFAULT_CITY_ID,
   getCity,
   MAX_PINNED_CITIES,
   pinCity,
@@ -40,22 +39,18 @@ import {
   formatPrayerTime,
   getPrayerTimes,
   localMinuteAt,
-  prayerTimeHasArrived,
   nextPrayerAt,
+  prayerTimeHasArrived,
   isValidJumuahTime,
   type PrayerName,
 } from './src/domain/prayer';
 import {
   getIslamicDate,
   getUpcomingIslamicEvents,
-  HIJRI_MONTHS,
+  ISLAMIC_EVENTS,
 } from './src/domain/islamicCalendar';
 import {
-  checkDiagnosticsStorage,
-  isSecureDiagnosticsAvailable,
   installUnhandledExceptionRecorder,
-  readDiagnosticEntries,
-  buildFridayDigest,
 } from './src/services/diagnostics';
 import { installBatteryGovernor } from './src/services/batteryGovernor';
 import {
@@ -70,9 +65,10 @@ import { VoiceSearchButton } from './src/components/VoiceSearchButton';
 import { WorshipHub, type WorshipTab } from './src/components/WorshipHub';
 import { StoryReader } from './src/components/StoryReader';
 import { GuidanceHub } from './src/components/GuidanceHub';
-import { HISN_AL_MUSLIM_DUAS } from './src/domain/adhkar';
-import { getDailyHadith } from './src/domain/hadith';
+import { IslamicCalendarCard } from './src/components/IslamicCalendarCard';
 import { getDailyQuranJourney } from './src/domain/dailyQuranJourney';
+import { getDailyQhdReminder, type DailyQhdTheme } from './src/domain/dailyQhdReminder';
+import { getQuoteOfTheDay } from './src/domain/islamicQuotes';
 import { STORIES } from './src/domain/stories';
 import { resetPostSalahCounts } from './src/domain/tasbeeh';
 import { getDailyVerse, type DailyVerse } from './src/services/dailyVerse';
@@ -109,11 +105,11 @@ import {
 import { readPairedHighlight, syncPairedData } from './src/services/pairSync';
 import {
   createSystemReport,
-  readLastSystemReport,
+  discardStoredSystemReport,
   type SystemReport,
 } from './src/services/systemReport';
 
-type Screen = 'Prayer' | 'Global' | 'Fasting' | 'Guide' | 'More' | 'Worship' | 'Settings' | 'Community';
+type Screen = 'Prayer' | 'PrayerDetails' | 'Global' | 'Fasting' | 'Guide' | 'More' | 'Worship' | 'Settings' | 'Community';
 type PrimaryScreen = 'Prayer' | 'Worship' | 'Community' | 'Guide' | 'More';
 const PRIMARY_TABS: readonly { screen: PrimaryScreen; label: string; icon: string }[] = [
   { screen: 'Prayer', label: 'Home', icon: '⌂' },
@@ -126,7 +122,7 @@ const PRIMARY_TABS: readonly { screen: PrimaryScreen; label: string; icon: strin
 function isPrimaryTabActive(tab: PrimaryScreen, screen: Screen): boolean {
   switch (tab) {
     case 'Prayer':
-      return screen === 'Prayer' || screen === 'Global' || screen === 'Fasting';
+      return screen === 'Prayer' || screen === 'PrayerDetails' || screen === 'Global' || screen === 'Fasting';
     case 'Worship':
       return screen === 'Worship';
     case 'Community':
@@ -245,26 +241,11 @@ const FASTING_CHECKLIST = [
 ] as const;
 
 const BRAND_TAGLINE = 'The Seeker who carries the Light of Guidance across horizons.';
-const DEV_KEY_DIGEST: unknown = Constants.expoConfig?.extra?.developerKeyDigest;
+const DEFAULT_FURQAN_BASE_URL = 'https://furqan-quran-app.vercel.app';
 
 void SplashScreen.preventAutoHideAsync().catch((error: unknown) => {
   console.error('Mishkah could not hold the native splash screen.', error);
 });
-
-function isValidDigest(value: unknown): value is string {
-  return typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value);
-}
-
-function secureStringEqual(left: string, right: string): boolean {
-  if (left.length !== right.length) {
-    return false;
-  }
-  let difference = 0;
-  for (let index = 0; index < left.length; index += 1) {
-    difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
-  }
-  return difference === 0;
-}
 
 function countdownLabel(minutes: number): string {
   const hours = Math.floor(minutes / 60);
@@ -288,9 +269,98 @@ function friendlyError(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
+const HOME_PHOTO_SOURCES = [
+  require('./assets/share-backgrounds/ocean.jpg'),
+  require('./assets/share-backgrounds/sky.jpg'),
+  require('./assets/share-backgrounds/skyline.jpg'),
+  require('./assets/share-backgrounds/snow.jpg'),
+  require('./assets/share-backgrounds/mountain-starry.jpg'),
+  require('./assets/share-backgrounds/mountain-valley.jpg'),
+  require('./assets/share-backgrounds/alpine-range.jpg'),
+  require('./assets/share-backgrounds/forest-sunrise.jpg'),
+  require('./assets/share-backgrounds/lakeshore.jpg'),
+] as const;
+const HOME_PHOTO_STORAGE_KEY = 'mishkah-home-photo-index';
+const HOME_REFLECTIONS: Record<DailyQhdTheme['id'], { question: string; action: string }> = {
+  remembrance: {
+    question: 'What moment today could you meet with remembrance of Allah?',
+    action: 'Pause for a minute of dhikr or a sincere du’a.',
+  },
+  mercy: {
+    question: 'Who around you might need patience, mercy, or practical help?',
+    action: 'Offer one specific kindness without expecting anything back.',
+  },
+  prayer: {
+    question: 'How can you make space for the next salah in your day?',
+    action: 'Check its time now and prepare a calm place to pray.',
+  },
+  forgiveness: {
+    question: 'What would you like to turn back to Allah about, without losing hope?',
+    action: 'Make tawbah and take one small step toward a better choice.',
+  },
+  charity: {
+    question: 'What time, skill, or resource could you share for good?',
+    action: 'Plan one manageable act of charity or service.',
+  },
+  character: {
+    question: 'Where could you choose fairness, excellence, or care today?',
+    action: 'Make one conversation more patient and considerate.',
+  },
+  gratitude: {
+    question: 'Which blessing in your life have you not paused to notice?',
+    action: 'Thank Allah for it, then use it in a good way.',
+  },
+};
+const WEEKLY_SURAH_SPOTLIGHTS = [
+  { surah: 1, name: 'Al-Fatiha', range: '1–7', note: 'A short opening prayer asking Allah for guidance.' },
+  { surah: 18, name: 'Al-Kahf', range: '1–10', note: 'Begin with verses about revelation, faith, and steadfastness.' },
+  { surah: 55, name: 'Ar-Rahman', range: '1–16', note: 'Reflect on signs of creation and the blessings named in these verses.' },
+  { surah: 67, name: 'Al-Mulk', range: '1–5', note: 'Read about creation and the signs in the heavens.' },
+  { surah: 93, name: 'Ad-Duha', range: '1–11', note: 'A reminder of care, gratitude, and kindness to others.' },
+  { surah: 94, name: 'Ash-Sharh', range: '1–8', note: 'Reflect on ease, perseverance, and turning to Allah.' },
+  { surah: 103, name: 'Al-Asr', range: '1–3', note: 'A concise reminder of faith, good deeds, truth, and patience.' },
+] as const;
+
+function chooseHomePhotoIndex(previousIndex?: number): number {
+  if (previousIndex !== undefined) {
+    const offset = 1 + Math.floor(Math.random() * (HOME_PHOTO_SOURCES.length - 1));
+    return (previousIndex + offset) % HOME_PHOTO_SOURCES.length;
+  }
+  return Math.floor(Math.random() * HOME_PHOTO_SOURCES.length);
+}
+
+function initialHomePhotoIndex(): number {
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    try {
+      const previousIndex = Number.parseInt(
+        window.localStorage.getItem(HOME_PHOTO_STORAGE_KEY) ?? '',
+        10,
+      );
+      if (
+        Number.isInteger(previousIndex) &&
+        previousIndex >= 0 &&
+        previousIndex < HOME_PHOTO_SOURCES.length
+      ) {
+        return chooseHomePhotoIndex(previousIndex);
+      }
+    } catch (error) {
+      console.error('Mishkah could not read its Home photo shuffle state.', error);
+    }
+  }
+  return chooseHomePhotoIndex();
+}
+
+function weeklySpotlightIndex(date = new Date()): number {
+  const dayMs = 86_400_000;
+  const utcDate = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+  const mondayOffset = (new Date(utcDate).getUTCDay() + 6) % 7;
+  const monday = utcDate - mondayOffset * dayMs;
+  return Math.floor(monday / (7 * dayMs)) % WEEKLY_SURAH_SPOTLIGHTS.length;
+}
+
 export default function App() {
   const { width: windowWidth } = useWindowDimensions();
-  const isWideLayout = Platform.OS === 'web' && windowWidth >= 980;
+  const isWideLayout = Platform.OS === 'web' && windowWidth >= 768;
   const [preferences, setPreferences] = useState<AppPreferences>(DEFAULT_PREFERENCES);
   const preferencesRef = useRef(preferences);
   const [isReady, setIsReady] = useState(false);
@@ -305,25 +375,22 @@ export default function App() {
   const [notice, setNotice] = useState('');
   const [cityQuery, setCityQuery] = useState('');
   const [capacityModalVisible, setCapacityModalVisible] = useState(false);
+  const [prayerCelebrationVisible, setPrayerCelebrationVisible] = useState(false);
   const [profileModalVisible, setProfileModalVisible] = useState(false);
   const [streakModalVisible, setStreakModalVisible] = useState(false);
-  const [prayerModalVisible, setPrayerModalVisible] = useState(false);
   const [universalSearchVisible, setUniversalSearchVisible] = useState(false);
   const [universalSearchQuery, setUniversalSearchQuery] = useState('');
   const [universalSearchStatus, setUniversalSearchStatus] = useState('');
   const [worshipTab, setWorshipTab] = useState<WorshipTab>('Hadith');
   const [guidanceSection, setGuidanceSection] = useState<'overview' | 'qibla' | 'wellness'>('overview');
   const [guideQuery, setGuideQuery] = useState('');
-  const [guideAnswer, setGuideAnswer] = useState(getLocalAnswer(''));
+  const [guideAnswer, setGuideAnswer] = useState({
+    title: 'Ready to help',
+    answer: 'Ask about prayer, Qur’an, Hadith, du’a, remembrance, or a Mishkah feature.',
+  });
   const [guideOnlineAnswer, setGuideOnlineAnswer] = useState<RafiqOnlineAnswer | null>(null);
   const [guideOnlineError, setGuideOnlineError] = useState('');
   const [guideOnlineLoading, setGuideOnlineLoading] = useState(false);
-  const [healthMessage, setHealthMessage] = useState('');
-  const [developerKey, setDeveloperKey] = useState('');
-  const [developerUnlocked, setDeveloperUnlocked] = useState(false);
-  const [developerMessage, setDeveloperMessage] = useState('');
-  const [developerDigest, setDeveloperDigest] = useState('');
-  const [isCheckingHealth, setIsCheckingHealth] = useState(false);
   const [systemReport, setSystemReport] = useState<SystemReport | null>(null);
   const [reportBusy, setReportBusy] = useState(false);
   const [syncState, setSyncState] = useState<SyncState | null>(null);
@@ -343,7 +410,8 @@ export default function App() {
   const [backupMessage, setBackupMessage] = useState('');
   const [dailyVerse, setDailyVerse] = useState<DailyVerse | null>(null);
   const [dailyVerseError, setDailyVerseError] = useState('');
-  const [refreshingVerse, setRefreshingVerse] = useState(false);
+  const [refreshingHome, setRefreshingHome] = useState(false);
+  const [homePhotoIndex, setHomePhotoIndex] = useState(initialHomePhotoIndex);
   const [journeyStory, setJourneyStory] = useState<(typeof STORIES)[number] | null>(null);
   const rafiqApiUrl = String(Constants.expoConfig?.extra?.rafiqApiUrl ?? '').trim();
   const syncConfigured = isCrossDeviceSyncConfigured();
@@ -358,6 +426,9 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
+    void discardStoredSystemReport().catch((error: unknown) => {
+      console.error('Mishkah could not remove a previously stored system report.', error);
+    });
     Promise.all([
       loadPreferences().then(async (loadedPreferences) => {
         await savePreferences(loadedPreferences);
@@ -372,10 +443,6 @@ export default function App() {
       readSyncState().then((next) => {
         if (active) setSyncState(next);
       }),
-      readLastSystemReport().then((next) => {
-        if (active) setSystemReport(next);
-      }),
-  const [prayerCelebrationVisible, setPrayerCelebrationVisible] = useState(false);
     ])
       .catch((error: unknown) => {
         if (active) {
@@ -471,7 +538,7 @@ export default function App() {
     try {
       return {
         date: getIslamicDate(localDate),
-        events: getUpcomingIslamicEvents(localDate),
+        events: getUpcomingIslamicEvents(localDate, ISLAMIC_EVENTS.length),
         error: '',
       };
     } catch (error) {
@@ -482,14 +549,15 @@ export default function App() {
       };
     }
   }, [localDate]);
-  const dailyHadith = getDailyHadith(now);
+  const dailyQhd = getDailyQhdReminder(now);
+  const dailyReflection = HOME_REFLECTIONS[dailyQhd.theme.id];
+  const weeklySurah = WEEKLY_SURAH_SPOTLIGHTS[weeklySpotlightIndex(now)];
+  const quoteOfTheDay = getQuoteOfTheDay(now);
   const dailyJourney = getDailyQuranJourney(now);
-  const [duaYear, duaMonth, duaDay] = localDate.split('-').map(Number);
-  const duaDayOfYear = localDate
-    ? Math.floor((Date.UTC(duaYear, duaMonth - 1, duaDay) - Date.UTC(duaYear, 0, 1)) / 86_400_000)
-    : 0;
-  const dailyDua = HISN_AL_MUSLIM_DUAS[duaDayOfYear % HISN_AL_MUSLIM_DUAS.length];
-  const furqanBaseUrl = String(Constants.expoConfig?.extra?.furqanBaseUrl ?? '').trim().replace(/\/$/, '');
+  const isHomeScreen = screen === 'Prayer';
+  const furqanBaseUrl = String(Constants.expoConfig?.extra?.furqanBaseUrl ?? '')
+    .trim()
+    .replace(/\/$/, '') || DEFAULT_FURQAN_BASE_URL;
 
   useEffect(() => {
     const handleJourneyUrl = (url: string | null | undefined) => {
@@ -525,17 +593,30 @@ export default function App() {
   }, []);
 
   const refreshDailyVerse = useCallback(async (forceRefresh = false) => {
-    setRefreshingVerse(true);
     try {
       const pairedAyah = await readPairedHighlight(new Date());
       setDailyVerse(await getDailyVerse(new Date(), forceRefresh, pairedAyah));
       setDailyVerseError('');
     } catch (error) {
       setDailyVerseError(friendlyError(error, 'The verse of the day could not be loaded.'));
-    } finally {
-      setRefreshingVerse(false);
     }
   }, []);
+
+  const refreshHome = useCallback(async () => {
+    setRefreshingHome(true);
+    setHomePhotoIndex((current) => chooseHomePhotoIndex(current));
+    await new Promise<void>((resolve) => setTimeout(resolve, 300));
+    setRefreshingHome(false);
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(HOME_PHOTO_STORAGE_KEY, String(homePhotoIndex));
+    } catch (error) {
+      console.error('Mishkah could not save its Home photo shuffle state.', error);
+    }
+  }, [homePhotoIndex]);
 
   const handlePairingFailure = useCallback(async (error: unknown, fallback: string) => {
     if (isPairingCodeRevokedError(error)) {
@@ -585,6 +666,9 @@ export default function App() {
     : undefined;
   const nextPrayer = city && prayerTimes ? nextPrayerAt(prayerTimes, now, city.timeZone) : undefined;
   const jumuahTime = city ? preferences.jumuahTimesByCity[city.id] : undefined;
+  const jumuahMinute = jumuahTime && isValidJumuahTime(jumuahTime)
+    ? Number(jumuahTime.slice(0, 2)) * 60 + Number(jumuahTime.slice(3, 5))
+    : undefined;
   const isFridayInCity = city
     ? new Intl.DateTimeFormat('en-US', { timeZone: city.timeZone, weekday: 'long' }).format(now) === 'Friday'
     : false;
@@ -690,70 +774,6 @@ export default function App() {
       );
     } catch (error) {
       setNotice(friendlyError(error, 'The reminder could not be scheduled.'));
-    }
-  };
-
-  const runHealthCheck = async () => {
-    setIsCheckingHealth(true);
-    setHealthMessage('');
-    try {
-      if (!(await isSecureDiagnosticsAvailable())) {
-        setHealthMessage('Private diagnostics are available in the iOS and Android apps, not this browser.');
-        return;
-      }
-      if (!(await checkPreferencesStorage())) {
-        throw new Error('Saved app preferences are not available.');
-      }
-      await checkDiagnosticsStorage();
-      const entries = await readDiagnosticEntries();
-      setHealthMessage(
-        entries.length > 0
-          ? 'A small issue was recorded for developer review. Your private logs stay on this device.'
-          : 'Everything looks well. No issues have been logged.',
-      );
-    } catch (error) {
-      console.error('Mishkah could not complete its private health check.', error);
-      setHealthMessage('The private health check could not finish. Your technical logs remain private on this device.');
-    } finally {
-      setIsCheckingHealth(false);
-    }
-  };
-
-  const unlockDeveloperTools = async () => {
-    if (!isValidDigest(DEV_KEY_DIGEST)) {
-      setDeveloperMessage('Developer access is not configured for this build.');
-      return;
-    }
-    if (!developerKey.trim()) {
-      setDeveloperMessage('Enter the configured master key to continue.');
-      return;
-    }
-    try {
-      const enteredDigest = await Crypto.digestStringAsync(
-        Crypto.CryptoDigestAlgorithm.SHA256,
-        developerKey,
-      );
-      if (!secureStringEqual(enteredDigest, DEV_KEY_DIGEST)) {
-        setDeveloperMessage('That key did not match.');
-        return;
-      }
-      const entries = await readDiagnosticEntries();
-      setDeveloperUnlocked(true);
-      setDeveloperDigest(buildFridayDigest(entries));
-      setDeveloperMessage(`${entries.length} encrypted exception${entries.length === 1 ? '' : 's'} in the local ring buffer.`);
-      setDeveloperKey('');
-    } catch (error) {
-      setDeveloperMessage(`Developer diagnostics could not be opened: ${friendlyError(error, 'secure storage is unavailable')}`);
-    }
-  };
-
-  const refreshDeveloperDigest = async () => {
-    try {
-      const entries = await readDiagnosticEntries();
-      setDeveloperDigest(buildFridayDigest(entries));
-      setDeveloperMessage(`${entries.length} encrypted exception${entries.length === 1 ? '' : 's'} in the local ring buffer.`);
-    } catch (error) {
-      setDeveloperMessage(`The local digest could not be read: ${friendlyError(error, 'secure storage is unavailable')}`);
     }
   };
 
@@ -951,9 +971,31 @@ export default function App() {
   const runSystemReport = async () => {
     setReportBusy(true);
     try {
-      setSystemReport(await createSystemReport());
+      const report = await createSystemReport();
+      setSystemReport(report);
+      const reportLines = [
+        'Mishkah private health report',
+        '',
+        `Started (UTC): ${new Date(report.startedAt).toISOString()}`,
+        `Finished (UTC): ${new Date(report.finishedAt).toISOString()}`,
+        `Duration: ${(report.durationMs / 1000).toFixed(2)} seconds`,
+        '',
+        ...report.items.map((item) => `${item.ok ? 'PASS' : 'CHECK'} — ${item.label}: ${item.detail}`),
+        '',
+        'Only check summaries are included. The report contains no crash-log contents, questions, or account details.',
+      ];
+      const subject = `Mishkah health report · ${new Date(report.startedAt).toISOString().slice(0, 10)}`;
+      const mailto = `mailto:lixdeji@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(reportLines.join('\n'))}`;
+      try {
+        await Linking.openURL(mailto);
+        setNotice('A report draft is open in your email app. Review it and tap Send to deliver it to Lixzon.');
+      } catch (error) {
+        console.error('Mishkah could not open the email composer for its private report.', error);
+        setNotice('The check finished, but no email app could be opened. Its results are visible below for this session.');
+      }
     } catch (error) {
-      setNotice(friendlyError(error, 'The weekly system report could not run.'));
+      console.error('Mishkah could not create its private health report.', error);
+      setNotice(friendlyError(error, 'The private health report could not be completed.'));
     } finally {
       setReportBusy(false);
     }
@@ -1035,11 +1077,19 @@ export default function App() {
   };
 
   const togglePrayer = (prayerName: PrayerName) => {
-    if (prayerName === 'Sunrise') return;
+    if (prayerName === 'Sunrise' || !city || !prayerTimes) return;
     const completed = preferences.prayerChecklistDate === localDate
       ? preferences.completedPrayers
       : [];
     const alreadyCompleted = completed.includes(prayerName);
+    const checklistPrayerTime =
+      prayerName === 'Dhuhr' && isFridayInCity && jumuahMinute !== undefined
+        ? jumuahMinute
+        : prayerTimes[prayerName];
+    if (!alreadyCompleted && !prayerTimeHasArrived(checklistPrayerTime, now, city.timeZone)) {
+      setNotice(`${prayerName} can be marked after its scheduled time.`);
+      return;
+    }
     const completedPrayers = alreadyCompleted
       ? completed.filter((name) => name !== prayerName)
       : [...completed, prayerName];
@@ -1058,20 +1108,39 @@ export default function App() {
         ),
       }));
     }
+
+    if (
+      !alreadyCompleted &&
+      OBLIGATORY_PRAYERS.every((name) => completedPrayers.includes(name))
+    ) {
+      setPrayerCelebrationVisible(true);
+    }
   };
 
   const askGuide = (query: string) => {
+    const cleanQuery = query.trim();
     setGuideQuery(query);
-    setGuideAnswer(getLocalAnswer(query));
     setGuideOnlineAnswer(null);
     setGuideOnlineError('');
+    if (!cleanQuery) {
+      setGuideAnswer({
+        title: 'Ask a question',
+        answer: 'Type a question or choose an offline topic below to get a focused answer.',
+      });
+      return;
+    }
+    setGuideAnswer(getContextualAnswer(cleanQuery));
   };
 
   const searchGuideOnline = async (query: string) => {
     const cleanQuery = query.trim();
-    if (!cleanQuery) return;
+    if (!cleanQuery) {
+      askGuide('');
+      setGuideOnlineError('Enter a question before searching.');
+      return;
+    }
     setGuideQuery(cleanQuery);
-    setGuideAnswer(getLocalAnswer(cleanQuery));
+    setGuideAnswer(getContextualAnswer(cleanQuery));
     setGuideOnlineAnswer(null);
     setGuideOnlineError('');
     if (!rafiqApiUrl) {
@@ -1082,14 +1151,6 @@ export default function App() {
     try {
       const locale = Platform.OS === 'web' && typeof navigator !== 'undefined'
         ? navigator.language
-    const checklistPrayerTime =
-      prayerName === 'Dhuhr' && isFridayInCity && jumuahMinute !== undefined
-        ? jumuahMinute
-        : prayerTimes[prayerName];
-    if (!alreadyCompleted && !prayerTimeHasArrived(checklistPrayerTime, now, city.timeZone)) {
-      setNotice(`${prayerName} can be marked after its scheduled time.`);
-      return;
-    }
         : 'en';
       setGuideOnlineAnswer(await searchRafiqOnline(rafiqApiUrl, cleanQuery, locale));
     } catch (error) {
@@ -1108,13 +1169,6 @@ export default function App() {
       ? 'Community'
       : opensStories
         ? 'Worship'
-
-    if (
-      !alreadyCompleted &&
-      OBLIGATORY_PRAYERS.every((name) => completedPrayers.includes(name))
-    ) {
-      setPrayerCelebrationVisible(true);
-    }
       : /qibla|qiblah|at.?tibb|remedy|health|wellness/.test(normalized)
         ? 'Guide'
         : /hadith|dua|du'a|adhkar|tasbeeh|tasbih|library|archive/.test(normalized)
@@ -1214,7 +1268,7 @@ export default function App() {
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="Open prayer schedule and places"
-                  onPress={() => setPrayerModalVisible(true)}
+                  onPress={() => setScreen('PrayerDetails')}
                   style={styles.headerActionButton}
                 >
                   <Text style={[styles.headerActionGlyph, styles.prayerGlyph]}>☾</Text>
@@ -1249,6 +1303,32 @@ export default function App() {
                 </Pressable>
               </View>
             </View>
+          ) : screen === 'PrayerDetails' ? (
+            <>
+              <View style={styles.contextHeader}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Back to Home"
+                  onPress={() => setScreen('Prayer')}
+                  style={styles.headerBackButton}
+                >
+                  <Text style={styles.headerBackGlyph}>‹</Text>
+                </Pressable>
+                <View>
+                  <Text style={styles.contextHeaderTitle}>Prayer schedule</Text>
+                  <Text style={styles.contextHeaderSubtitle}>{city.name} · {city.country}</Text>
+                </View>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Open global prayer places"
+                onPress={() => setScreen('Global')}
+                style={styles.headerActionButton}
+              >
+                <Text style={styles.headerActionGlyph}>◎</Text>
+                <Text style={styles.headerActionLabel}>Places</Text>
+              </Pressable>
+            </>
           ) : (
             <>
               <View style={styles.contextHeader}>
@@ -1327,6 +1407,17 @@ export default function App() {
                     <Text style={styles.headerActionLabel}>Profile</Text>
                   </Pressable>
                 ) : null}
+                {screen === 'Global' ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Back to prayer schedule"
+                    onPress={() => setScreen('PrayerDetails')}
+                    style={styles.headerActionButton}
+                  >
+                    <Text style={styles.headerActionGlyph}>‹</Text>
+                    <Text style={styles.headerActionLabel}>Prayer</Text>
+                  </Pressable>
+                ) : null}
               </View>
             </>
           )}
@@ -1339,8 +1430,8 @@ export default function App() {
           keyboardShouldPersistTaps="handled"
           refreshControl={screen === 'Prayer' ? (
             <RefreshControl
-              onRefresh={() => void refreshDailyVerse(true)}
-              refreshing={refreshingVerse}
+              onRefresh={() => void refreshHome()}
+              refreshing={refreshingHome}
               tintColor={palette.accent}
             />
           ) : undefined}
@@ -1355,6 +1446,257 @@ export default function App() {
           ) : null}
 
           {screen === 'Prayer' ? (
+            <>
+              <View style={styles.introBlock}>
+                <Text style={styles.eyebrow}>YOUR DAY IN READING</Text>
+                <Text style={styles.pageTitle}>A little closer, each day.</Text>
+                <Text style={styles.dateText}>{friendlyDate(now, city.timeZone)}</Text>
+              </View>
+
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Open mindful fasting routine"
+                onPress={() => setScreen('Fasting')}
+                style={[styles.softCard, styles.photoSoftCard]}
+              >
+                <Image
+                  source={HOME_PHOTO_SOURCES[(homePhotoIndex + 1) % HOME_PHOTO_SOURCES.length]}
+                  resizeMode="cover"
+                  style={StyleSheet.absoluteFill}
+                />
+                <View style={styles.softCardScrim} />
+                <View style={styles.photoSoftCardContent}>
+                  <Text style={styles.photoSoftCardSymbol}>☾</Text>
+                  <Text style={styles.photoSoftCardTitle}>A mindful fast</Text>
+                  <Text style={styles.photoSoftCardBody}>Your suhoor & iftar routine</Text>
+                </View>
+              </Pressable>
+
+              <View style={styles.sectionHeading}>
+                <View>
+                  <Text style={styles.sectionTitle}>Today’s QHD reminder</Text>
+                  <Text style={styles.sectionCaption}>{dailyQhd.theme.title} · seven-day theme rotation</Text>
+                </View>
+              </View>
+              <View style={styles.qhdPhotoCard}>
+                <Image
+                  source={HOME_PHOTO_SOURCES[homePhotoIndex]}
+                  resizeMode="cover"
+                  style={StyleSheet.absoluteFill}
+                />
+                <View style={styles.qhdPhotoScrim} />
+                <View style={styles.qhdPhotoContent}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={dailyVerse
+                      ? `Open ${dailyVerse.surahName} ${dailyVerse.surahNumber}, verse ${dailyVerse.ayahNumber} in Furqan`
+                      : 'Open the Quran verse of the day in Furqan'}
+                    disabled={!dailyVerse}
+                    onPress={() => {
+                      if (dailyVerse) {
+                        void openSupportLink(`${furqanBaseUrl}/surah/${dailyVerse.surahNumber}?ayah=${dailyVerse.ayahNumber}`);
+                      }
+                    }}
+                    style={styles.qhdVerse}
+                  >
+                    <Text style={styles.photoCardEyebrow}>QUR’AN VERSE OF THE DAY · {dailyQhd.theme.title.toUpperCase()}</Text>
+                    {dailyVerse ? (
+                      <>
+                        <Text numberOfLines={3} style={styles.photoCardArabic}>{dailyVerse.arabic}</Text>
+                        <Text numberOfLines={5} style={styles.photoCardBody}>{dailyVerse.translation}</Text>
+                        <Text style={styles.photoCardLink}>{dailyVerse.surahName} · {dailyVerse.surahNumber}:{dailyVerse.ayahNumber} · Open in Furqan ›</Text>
+                      </>
+                    ) : (
+                      <>
+                        <Text style={styles.photoCardBody}>{dailyVerseError || 'Loading today’s shared verse…'}</Text>
+                        {dailyVerseError ? (
+                          <Pressable accessibilityRole="button" onPress={() => void refreshDailyVerse(true)} style={styles.retryVerseButton}>
+                            <Text style={styles.photoCardLink}>Try again</Text>
+                          </Pressable>
+                        ) : null}
+                      </>
+                    )}
+                  </Pressable>
+                  <View style={styles.qhdDivider} />
+                  <View style={styles.qhdLowerRow}>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => {
+                        setWorshipTab('Hadith');
+                        setScreen('Worship');
+                      }}
+                      style={styles.qhdLowerItem}
+                    >
+                      <Text style={styles.photoCardEyebrow}>HADITH · {dailyQhd.hadith.reference}</Text>
+                      <Text numberOfLines={2} style={styles.photoCardTitle}>{dailyQhd.hadith.title}</Text>
+                      <Text numberOfLines={3} style={styles.photoCardBody}>{dailyQhd.hadith.summary}</Text>
+                      <Text style={styles.photoCardLink}>Read in Library ›</Text>
+                    </Pressable>
+                    <View style={styles.qhdVerticalDivider} />
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => {
+                        setWorshipTab('Duas');
+                        setScreen('Worship');
+                      }}
+                      style={styles.qhdLowerItem}
+                    >
+                      <Text style={styles.photoCardEyebrow}>DU’A</Text>
+                      <Text numberOfLines={2} style={styles.photoCardTitle}>{dailyQhd.dua.title}</Text>
+                      <Text numberOfLines={2} style={styles.photoCardArabic}>{dailyQhd.dua.arabic}</Text>
+                      <Text numberOfLines={3} style={styles.photoCardBody}>{dailyQhd.dua.meaning}</Text>
+                      <Text style={styles.photoCardLink}>Read in Library ›</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.sectionHeading}>
+                <View>
+                  <Text style={styles.sectionTitle}>Quote of the day</Text>
+                  <Text style={styles.sectionCaption}>A sourced reminder from the Prophetic tradition and Islamic sayings</Text>
+                </View>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  setWorshipTab('Sayings');
+                  setScreen('Worship');
+                }}
+                style={styles.quotePhotoCard}
+              >
+                <Image
+                  source={HOME_PHOTO_SOURCES[(homePhotoIndex + 3) % HOME_PHOTO_SOURCES.length]}
+                  resizeMode="cover"
+                  style={StyleSheet.absoluteFill}
+                />
+                <View style={styles.qhdPhotoScrim} />
+                <View style={styles.qhdPhotoContent}>
+                  <Text style={styles.photoCardEyebrow}>QUOTE OF THE DAY</Text>
+                  <Text style={styles.quotePhotoText}>“{quoteOfTheDay.text}”</Text>
+                  <Text style={styles.photoCardTitle}>{quoteOfTheDay.by}</Text>
+                  <Text style={styles.photoCardLink}>{quoteOfTheDay.source}{quoteOfTheDay.attributed ? ' · attributed' : ''}</Text>
+                  <Text style={styles.photoCardLink}>Browse sayings in Library ›</Text>
+                </View>
+              </Pressable>
+
+              <View style={styles.sectionHeading}>
+                <View>
+                  <Text style={styles.sectionTitle}>A daily Quran journey</Text>
+                  <Text style={styles.sectionCaption}>Shared with Furqan · story, related verses, and reflection</Text>
+                </View>
+              </View>
+              <View style={styles.quotePhotoCard}>
+                <Image
+                  source={HOME_PHOTO_SOURCES[(homePhotoIndex + 6) % HOME_PHOTO_SOURCES.length]}
+                  resizeMode="cover"
+                  style={StyleSheet.absoluteFill}
+                />
+                <View style={styles.qhdPhotoScrim} />
+                <View style={styles.qhdPhotoContent}>
+                  <Text style={styles.photoCardEyebrow}>DAILY QUR’AN JOURNEY · SHARED WITH FURQAN</Text>
+                  <Text style={styles.photoCardTitle}>The story of {dailyJourney.story.title}</Text>
+                  <Text style={styles.photoCardBody}>Read related Qur’an passages in Furqan, the long story here, then pause for a short reflection.</Text>
+                  <View style={styles.choiceRow}>
+                    {dailyJourney.story.quranRefs.map((reference) => (
+                      <Pressable
+                        accessibilityRole="link"
+                        key={`${reference.surah}:${reference.from}`}
+                        onPress={() => {
+                          if (!furqanBaseUrl) {
+                            setNotice('The Furqan reader is not configured for this build.');
+                            return;
+                          }
+                          void openSupportLink(`${furqanBaseUrl}/surah/${reference.surah}?ayah=${reference.from}`);
+                        }}
+                        style={styles.photoCardChip}
+                      >
+                        <Text style={styles.photoCardChipText}>
+                          {reference.surah}:{reference.from}{reference.to && reference.to !== reference.from ? `–${reference.to}` : ''} ›
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  <Text style={styles.photoCardEyebrow}>A SHORT REFLECTION</Text>
+                  <Text style={styles.photoCardBody}>{dailyJourney.reflection}</Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Read the long story of ${dailyJourney.story.title}`}
+                    onPress={() => setJourneyStory(dailyJourney.story)}
+                    style={styles.retryVerseButton}
+                  >
+                    <Text style={styles.photoCardLink}>Read the long story ›</Text>
+                  </Pressable>
+                </View>
+              </View>
+
+              <View style={styles.quotePhotoCard}>
+                <Image
+                  source={HOME_PHOTO_SOURCES[(homePhotoIndex + 2) % HOME_PHOTO_SOURCES.length]}
+                  resizeMode="cover"
+                  style={StyleSheet.absoluteFill}
+                />
+                <View style={styles.qhdPhotoScrim} />
+                <View style={styles.qhdPhotoContent}>
+                  <Text style={styles.photoCardEyebrow}>REFLECT &amp; ACT · {dailyQhd.theme.title.toUpperCase()}</Text>
+                  <Text style={styles.photoCardTitle}>{dailyReflection.question}</Text>
+                  <Text style={styles.photoCardBody}>
+                    <Text style={styles.photoCardEyebrow}>ONE SMALL STEP · </Text>
+                    {dailyReflection.action}
+                  </Text>
+                  <Text style={styles.photoCardLink}>
+                    A reflection prompt inspired by Qur’an {dailyQhd.theme.surah}:{dailyQhd.theme.ayah}; not a quoted tafsir.
+                  </Text>
+                  <Pressable
+                    accessibilityRole="link"
+                    accessibilityLabel={`Read Qur’an ${dailyQhd.theme.surah}, verse ${dailyQhd.theme.ayah} in Furqan`}
+                    onPress={() => {
+                      void openSupportLink(`${furqanBaseUrl}/surah/${dailyQhd.theme.surah}?ayah=${dailyQhd.theme.ayah}`);
+                    }}
+                    style={styles.retryVerseButton}
+                  >
+                    <Text style={styles.photoCardLink}>Read the verse in Furqan ›</Text>
+                  </Pressable>
+                </View>
+              </View>
+
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Read this week’s surah spotlight, ${weeklySurah.name}`}
+                onPress={() => {
+                  void openSupportLink(`${furqanBaseUrl}/surah/${weeklySurah.surah}?ayah=1`);
+                }}
+                style={styles.quotePhotoCard}
+              >
+                <Image
+                  source={HOME_PHOTO_SOURCES[(homePhotoIndex + 5) % HOME_PHOTO_SOURCES.length]}
+                  resizeMode="cover"
+                  style={StyleSheet.absoluteFill}
+                />
+                <View style={styles.qhdPhotoScrim} />
+                <View style={styles.qhdPhotoContent}>
+                  <Text style={styles.photoCardEyebrow}>THIS WEEK’S SURAH SPOTLIGHT</Text>
+                  <Text style={styles.photoCardTitle}>{weeklySurah.name}</Text>
+                  <Text style={styles.photoCardBody}>{weeklySurah.note}</Text>
+                  <Text style={styles.photoCardLink}>Qur’an {weeklySurah.surah}:{weeklySurah.range} · Read in Furqan ›</Text>
+                </View>
+              </Pressable>
+
+              {isHomeScreen ? (
+                <>
+              <IslamicCalendarCard
+                cityName={city.name}
+                currentDate={islamicCalendar?.date ?? null}
+                error={islamicCalendar?.error ?? ''}
+                events={islamicCalendar?.events ?? []}
+                onNotice={setNotice}
+              />
+            </>
+          ) : null}
+          </>
+          ) : null}
+
+          {screen === 'PrayerDetails' ? (
             <>
               <View style={styles.introBlock}>
                 <Text style={styles.eyebrow}>A MOMENT TO RECONNECT</Text>
@@ -1386,32 +1728,6 @@ export default function App() {
                 <Text style={styles.heroFootnote}>Calculated on your device · works offline</Text>
               </View>
 
-              <View style={styles.dailyHighlightCard}>
-                <Text style={styles.highlightEyebrow}>ISLAMIC CALENDAR · ESTIMATE</Text>
-                {islamicCalendar?.date ? (
-                  <>
-                    <Text style={styles.highlightTitle}>
-                      {islamicCalendar.date.day} {HIJRI_MONTHS[islamicCalendar.date.month - 1]} {islamicCalendar.date.year} AH
-                    </Text>
-                    <Text style={styles.highlightBody}>
-                      {city.name} · dates may differ by local moon sighting.
-                    </Text>
-                    {islamicCalendar.events.map((event) => (
-                      <View key={`${event.id}:${event.hijriYear}`} style={styles.calendarEventRow}>
-                        <Text style={styles.calendarEventTitle}>{event.title}</Text>
-                        <Text style={styles.calendarEventCountdown}>
-                          {event.daysUntil === 0 ? 'Today' : `In ${event.daysUntil} days`}
-                        </Text>
-                      </View>
-                    ))}
-                  </>
-                ) : (
-                  <Text style={styles.highlightBody}>
-                    {islamicCalendar?.error ?? 'Islamic calendar dates are unavailable.'}
-                  </Text>
-                )}
-              </View>
-
               <View style={styles.sectionHeading}>
                 <View>
                   <Text style={styles.sectionTitle}>Today’s prayers</Text>
@@ -1427,6 +1743,12 @@ export default function App() {
                   const isNextPrayer = prayerName === nextPrayer.name;
                   const isObligatory = prayerName !== 'Sunrise';
                   const prayerCompleted = isObligatory && completedPrayers.includes(prayerName);
+                  const checklistPrayerTime =
+                    prayerName === 'Dhuhr' && isFridayInCity && jumuahMinute !== undefined
+                      ? jumuahMinute
+                      : prayerTimes[prayerName];
+                  const prayerTimeReached =
+                    isObligatory && prayerTimeHasArrived(checklistPrayerTime, now, city.timeZone);
                   return (
                     <View key={prayerName}>
                       <View
@@ -1473,141 +1795,54 @@ export default function App() {
                           ) : null}
                         </View>
                       </View>
+                      {prayerName === 'Dhuhr' && isFridayInCity ? (
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={`Set or edit Jumu'ah time for ${city.name}`}
+                          onPress={() => setScreen('Global')}
+                          style={[styles.prayerRow, index === PRAYER_ORDER.length - 1 && styles.lastPrayerRow]}
+                        >
+                          <View style={styles.prayerNameGroup}>
+                            <View style={[styles.prayerDot, styles.jumuahDot]} />
+                            <Text style={styles.prayerName}>Jumu'ah</Text>
+                            <Text style={styles.nextTag}>FRIDAY</Text>
+                          </View>
+                          <Text style={styles.prayerTime}>
+                            {jumuahTime
+                              ? formatPrayerTime(
+                                  Number(jumuahTime.slice(0, 2)) * 60 + Number(jumuahTime.slice(3, 5)),
+                                  city,
+                                  localDate,
+                                )
+                              : 'Set local time'}
+                          </Text>
+                        </Pressable>
+                      ) : null}
                     </View>
                   );
                 })}
               </View>
 
-              {isFridayInCity ? (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Edit Jumu'ah time for ${city.name}`}
-                  onPress={() => setScreen('Global')}
-                  style={styles.fridayPrayerCard}
-                >
-                  <View style={styles.fridayPrayerCopy}>
-                    <Text style={styles.fridayPrayerEyebrow}>FRIDAY · JUMU'AH</Text>
-                    <Text style={styles.fridayPrayerTitle}>{city.name}</Text>
-                  </View>
-                  <Text style={styles.fridayPrayerTime}>
-                    {jumuahTime
-                      ? formatPrayerTime(
-                          Number(jumuahTime.slice(0, 2)) * 60 + Number(jumuahTime.slice(3, 5)),
-                          city,
-                          localDate,
-                        )
-                      : 'Set local time'}
-                  </Text>
-                </Pressable>
-              ) : null}
-
-              <View style={styles.inlineCards}>
-                <Pressable style={styles.softCard} onPress={() => setScreen('Global')}>
-                  <Text style={styles.softCardSymbol}>◎</Text>
-                  <Text style={styles.softCardTitle}>Across horizons</Text>
-                  <Text style={styles.softCardBody}>{pinnedCities.length} places in your hub</Text>
-                </Pressable>
-                <Pressable style={styles.softCard} onPress={() => setScreen('Fasting')}>
-                  <Text style={styles.softCardSymbol}>☾</Text>
-                  <Text style={styles.softCardTitle}>A mindful fast</Text>
-                  <Text style={styles.softCardBody}>Your suhoor & iftar routine</Text>
-                </Pressable>
-              </View>
-
-              <View style={styles.sectionHeading}>
-                <View>
-                  <Text style={styles.sectionTitle}>Today’s reminders</Text>
-                  <Text style={styles.sectionCaption}>A daily teaching and a supplication</Text>
-                </View>
-              </View>
-              {dailyVerse ? (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Open ${dailyVerse.surahName} ${dailyVerse.surahNumber}, verse ${dailyVerse.ayahNumber} in Furqan`}
-                  onPress={() => void openSupportLink(`${furqanBaseUrl}/surah/${dailyVerse.surahNumber}?ayah=${dailyVerse.ayahNumber}`)}
-                  style={styles.dailyHighlightCard}
-                >
-                  <Text style={styles.highlightEyebrow}>QUR’AN VERSE OF THE DAY · FURQAN</Text>
-                  <Text style={styles.highlightArabic}>{dailyVerse.arabic}</Text>
-                  <Text style={styles.highlightBody}>{dailyVerse.translation}</Text>
-                  <Text style={styles.highlightLink}>{dailyVerse.surahName} · {dailyVerse.surahNumber}:{dailyVerse.ayahNumber} · Open in Furqan ›</Text>
-                </Pressable>
-              ) : null}
-              {dailyVerseError ? (
-                <View style={styles.dailyHighlightCard}>
-                  <Text style={styles.highlightTitle}>Verse of the day unavailable</Text>
-                  <Text style={styles.highlightBody}>{dailyVerseError}</Text>
-                  <Pressable accessibilityRole="button" onPress={() => void refreshDailyVerse(true)} style={styles.retryVerseButton}>
-                    <Text style={styles.highlightLink}>Try again</Text>
-                  </Pressable>
-                </View>
-              ) : null}
-              <View style={styles.dailyHighlightCard}>
-                <Text style={styles.highlightEyebrow}>DAILY QUR’AN JOURNEY · SHARED WITH FURQAN</Text>
-                <Text style={styles.highlightTitle}>The story of {dailyJourney.story.title}</Text>
-                <Text style={styles.highlightBody}>
-                  Read related Qur’an passages in Furqan, the long story here, then pause for a short reflection.
+              <View style={styles.settingsCard}>
+                <Text style={styles.settingGroupTitle}>Prayer reminders</Text>
+                <Text style={styles.settingDescription}>
+                  Choose local device reminders for each obligatory prayer. Sunrise is not a prayer reminder.
                 </Text>
-                <View style={styles.choiceRow}>
-                  {dailyJourney.story.quranRefs.map((reference) => (
-                    <Pressable
-                      accessibilityRole="link"
-                      key={`${reference.surah}:${reference.from}`}
-                      onPress={() => {
-                        if (!furqanBaseUrl) {
-                          setNotice('The Furqan reader is not configured for this build.');
-                          return;
-                        }
-                        void openSupportLink(`${furqanBaseUrl}/surah/${reference.surah}?ayah=${reference.from}`);
-                      }}
-                      style={styles.choice}
-                    >
-                      <Text style={styles.choiceText}>
-                        {reference.surah}:{reference.from}{reference.to && reference.to !== reference.from ? `–${reference.to}` : ''} ›
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-                <Text style={styles.highlightEyebrow}>A SHORT REFLECTION</Text>
-                <Text style={styles.highlightBody}>{dailyJourney.reflection}</Text>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Read the long story of ${dailyJourney.story.title}`}
-                  onPress={() => setJourneyStory(dailyJourney.story)}
-                  style={styles.retryVerseButton}
-                >
-                  <Text style={styles.highlightLink}>Read the long story ›</Text>
-                </Pressable>
+                {OBLIGATORY_PRAYERS.map((prayer) => (
+                  <ToggleRow
+                    key={prayer}
+                    label={`${prayer} reminder`}
+                    detail={PRAYER_REMINDER_DETAILS[prayer]}
+                    enabled={preferences.prayerAlarms[prayer] === true}
+                    palette={palette}
+                    styles={styles}
+                    onChange={(enabled) => void setPrayerAlarm(prayer, enabled)}
+                  />
+                ))}
+                <Text style={styles.helperText}>
+                  Reminders are calculated offline for the next 14 days. Notification permission is required on iOS and Android.
+                </Text>
               </View>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => {
-                  setWorshipTab('Hadith');
-                  setScreen('Worship');
-                }}
-                style={styles.dailyHighlightCard}
-              >
-                <Text style={styles.highlightEyebrow}>HADITH OF THE DAY · {dailyHadith.reference}</Text>
-                <Text style={styles.highlightTitle}>{dailyHadith.title}</Text>
-                <Text style={styles.highlightBody}>{dailyHadith.summary}</Text>
-                <Text style={styles.highlightLink}>Browse Hadith in Library ›</Text>
-              </Pressable>
-              {dailyDua ? (
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => {
-                    setWorshipTab('Duas');
-                    setScreen('Worship');
-                  }}
-                  style={styles.dailyHighlightCard}
-                >
-                  <Text style={styles.highlightEyebrow}>DU’A OF THE DAY · {dailyDua.category.toUpperCase()}</Text>
-                  <Text style={styles.highlightTitle}>{dailyDua.title}</Text>
-                  <Text style={styles.highlightArabic}>{dailyDua.arabic}</Text>
-                  <Text style={styles.highlightBody}>{dailyDua.meaning}</Text>
-                  <Text style={styles.highlightLink}>Browse Du’a categories in Library ›</Text>
-                </Pressable>
-              ) : null}
             </>
           ) : null}
 
@@ -1696,14 +1931,18 @@ export default function App() {
                           <Text style={styles.cityPrayerValue}>{formatPrayerTime(cityTimes.Maghrib, pinnedCity, cityDate)}</Text>
                         </View>
                       </Pressable>
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel={`Unpin ${pinnedCity.name}`}
-                        onPress={() => removeCity(pinnedCity.id)}
-                        style={styles.removeCityButton}
-                      >
-                        <Text style={styles.removeCityText}>×</Text>
-                      </Pressable>
+                      {pinnedCity.id === DEFAULT_CITY_ID ? (
+                        <Text style={styles.fixedCityBadge}>DEFAULT</Text>
+                      ) : (
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={`Unpin ${pinnedCity.name}`}
+                          onPress={() => removeCity(pinnedCity.id)}
+                          style={styles.removeCityButton}
+                        >
+                          <Text style={styles.removeCityText}>×</Text>
+                        </Pressable>
+                      )}
                     </View>
                     <JumuahTimeField
                       cityName={pinnedCity.name}
@@ -1721,7 +1960,7 @@ export default function App() {
                 );
               })}
               {pinnedCities.length < MAX_PINNED_CITIES ? (
-                <Text style={styles.helperText}>Search above to add a place · {MAX_PINNED_CITIES - pinnedCities.length} {MAX_PINNED_CITIES - pinnedCities.length === 1 ? 'slot' : 'slots'} left</Text>
+                <Text style={styles.helperText}>Search above to add a place · {MAX_PINNED_CITIES - pinnedCities.length} {MAX_PINNED_CITIES - pinnedCities.length === 1 ? 'additional slot' : 'additional slots'} left</Text>
               ) : null}
             </>
           ) : null}
@@ -1756,12 +1995,6 @@ export default function App() {
                         preferences.alarmLeadMinutes === minutes && styles.selectedLeadChoice,
                       ]}
                     >
-                  const checklistPrayerTime =
-                    prayerName === 'Dhuhr' && isFridayInCity && jumuahMinute !== undefined
-                      ? jumuahMinute
-                      : prayerTimes[prayerName];
-                  const prayerTimeReached =
-                    isObligatory && prayerTimeHasArrived(checklistPrayerTime, now, city.timeZone);
                       <Text
                         style={[
                           styles.leadChoiceText,
@@ -1853,8 +2086,18 @@ export default function App() {
 
           {screen === 'Guide' ? (
             <>
+              <GuidanceHub
+                city={city}
+                hour={Number(new Intl.DateTimeFormat('en-GB', {
+                  timeZone: city.timeZone,
+                  hour: '2-digit',
+                  hourCycle: 'h23',
+                }).format(now))}
+                initialSection={guidanceSection}
+                palette={palette}
+              />
               <View style={styles.introBlock}>
-                <Text style={styles.eyebrow}>YOUR MISHKAH COMPANION</Text>
+                <Text style={styles.eyebrow}>OPTIONAL AI COMPANION</Text>
                 <Text style={styles.pageTitle}>Ask Rafiq.</Text>
                 <Text style={styles.bodyText}>
                   Get an instant offline answer, or search for current information and source links when online service is configured.
@@ -1937,16 +2180,6 @@ export default function App() {
                   Online answers can be incomplete or out of date. Check primary sources; ask a trusted scholar about personal rulings and a qualified professional about health.
                 </Text>
               </View>
-              <GuidanceHub
-                city={city}
-                hour={Number(new Intl.DateTimeFormat('en-GB', {
-                  timeZone: city.timeZone,
-                  hour: '2-digit',
-                  hourCycle: 'h23',
-                }).format(now))}
-                initialSection={guidanceSection}
-                palette={palette}
-              />
             </>
           ) : null}
 
@@ -1955,6 +2188,8 @@ export default function App() {
               preferences={preferences}
               palette={palette}
               date={localDate}
+              dailyQhd={dailyQhd}
+              dailyQuote={quoteOfTheDay}
               initialTab={worshipTab}
               furqanBaseUrl={furqanBaseUrl}
               featuresUnlocked={syncState?.featuresUnlocked ?? ['basic-guidance']}
@@ -2330,97 +2565,35 @@ export default function App() {
                 {pairMessage ? <Text style={styles.healthMessage}>{pairMessage}</Text> : null}
               </View>
               <View style={styles.settingsCard}>
-                <Text style={styles.settingGroupTitle}>Weekly system report</Text>
+                <Text style={styles.settingGroupTitle}>Private health report</Text>
                 <Text style={styles.settingDescription}>
-                  A plain-language check of Mishkah’s storage, settings, pairing, and today’s verse. The newest report stays on this device so you can reread it any time.
+                  Run a local check of storage, preferences, Furqan pairing, and today’s verse. The email draft includes start and finish times, duration, and each result. Mishkah does not keep report history or send reports in the background.
                 </Text>
                 <ActionButton
-                  label={reportBusy ? 'Running report…' : 'Run weekly report now'}
+                  label={reportBusy ? 'Checking…' : 'Run check and email report'}
                   onPress={() => void runSystemReport()}
                   palette={palette}
                   styles={styles}
                   disabled={reportBusy}
                   busy={reportBusy}
                 />
+                <Text style={styles.privacyNote}>
+                  A draft addressed to lixdeji@gmail.com opens in your email app; review it and tap Send. No crash-log contents, questions, or account details are included.
+                </Text>
                 {systemReport ? (
                   <View style={styles.syncCard}>
-                    <Text style={styles.syncLabel}>LATEST REPORT</Text>
+                    <Text style={styles.syncLabel}>MOST RECENT CHECK · THIS SESSION ONLY</Text>
                     <Text style={styles.syncMeta}>
-                      {new Date(systemReport.generatedAt).toLocaleString()}
+                      {new Date(systemReport.startedAt).toLocaleString()} → {new Date(systemReport.finishedAt).toLocaleString()}
                     </Text>
+                    <Text style={styles.syncMeta}>Duration: {(systemReport.durationMs / 1000).toFixed(2)} seconds</Text>
                     {systemReport.items.map((item) => (
                       <Text key={item.label} style={styles.syncMeta}>
                         {item.ok ? '✓' : '✗'} {item.label} — {item.detail}
                       </Text>
                     ))}
                   </View>
-                ) : (
-                  <Text style={styles.privacyNote}>No report has been generated on this device yet.</Text>
-                )}
-              </View>
-              <View style={styles.settingsCard}>
-                <Text style={styles.settingGroupTitle}>A private health check</Text>
-                <Text style={styles.settingDescription}>
-                  Check local app health without sharing technical logs.
-                </Text>
-                <ActionButton
-                  label={isCheckingHealth ? 'Checking…' : 'Run in-app health check'}
-                  onPress={() => void runHealthCheck()}
-                  palette={palette}
-                  styles={styles}
-                  disabled={isCheckingHealth}
-                  busy={isCheckingHealth}
-                />
-                {healthMessage ? <Text style={styles.healthMessage}>{healthMessage}</Text> : null}
-                <Text style={styles.privacyNote}>
-                  Diagnostics are encrypted on your device. They are never uploaded.
-                </Text>
-              </View>
-              <View style={styles.settingsCard}>
-                <Text style={styles.settingGroupTitle}>For developers</Text>
-                {developerUnlocked ? (
-                  <>
-                    <Text style={styles.settingDescription}>
-                      A private Friday digest from this device’s encrypted ring buffer.
-                    </Text>
-                    <Text style={styles.digestText}>{developerDigest}</Text>
-                    <ActionButton
-                      label="Refresh local digest"
-                      onPress={() => void refreshDeveloperDigest()}
-                      palette={palette}
-                      styles={styles}
-                    />
-                    <Pressable onPress={() => setDeveloperUnlocked(false)}>
-                      <Text style={styles.lockLink}>Lock developer tools</Text>
-                    </Pressable>
-                  </>
-                ) : (
-                  <>
-                    <Text style={styles.settingDescription}>
-                      {isValidDigest(DEV_KEY_DIGEST)
-                        ? 'Enter the build-configured master key to view the local digest.'
-                        : 'Developer access is locked until LIXZON_MASTER_KEY is configured for this build.'}
-                    </Text>
-                    <TextInput
-                      accessibilityLabel="Developer master key"
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      onChangeText={setDeveloperKey}
-                      placeholder="Master key"
-                      placeholderTextColor={palette.muted}
-                      secureTextEntry
-                      style={styles.keyInput}
-                      value={developerKey}
-                    />
-                    <ActionButton
-                      label="Unlock developer tools"
-                      onPress={() => void unlockDeveloperTools()}
-                      palette={palette}
-                      styles={styles}
-                    />
-                  </>
-                )}
-                {developerMessage ? <Text style={styles.healthMessage}>{developerMessage}</Text> : null}
+                ) : null}
               </View>
               <View style={styles.settingsCard}>
                 <Text style={styles.settingGroupTitle}>A note from Mishkah</Text>
@@ -2443,6 +2616,14 @@ export default function App() {
                   >
                     <Text style={styles.supportLabel}>Discord</Text>
                     <Text style={styles.supportHandle}>Lixzon8</Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="link"
+                    onPress={() => void openSupportLink('mailto:lixdeji@gmail.com')}
+                    style={styles.supportButton}
+                  >
+                    <Text style={styles.supportLabel}>Email</Text>
+                    <Text style={styles.supportHandle}>lixdeji@gmail.com</Text>
                   </Pressable>
                 </View>
               </View>
@@ -2669,99 +2850,6 @@ export default function App() {
       </Modal>
 
       <Modal
-        animationType="slide"
-        onRequestClose={() => setPrayerModalVisible(false)}
-        transparent
-        visible={prayerModalVisible}
-      >
-        <View style={styles.profileBackdrop}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Close prayer details"
-            onPress={() => setPrayerModalVisible(false)}
-            style={StyleSheet.absoluteFill}
-          />
-          <ScrollView
-            contentContainerStyle={styles.prayerDrawerContent}
-            style={styles.prayerDrawer}
-          >
-            <View style={styles.profileDrawerHandle} />
-            <View style={styles.profileDrawerHeading}>
-              <View>
-                <Text style={styles.settingGroupTitle}>Prayer schedule</Text>
-                <Text style={styles.settingDescription}>{city.name} · {city.country} · {preferences.calculationMethod}</Text>
-              </View>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Close prayer details"
-                onPress={() => setPrayerModalVisible(false)}
-                style={styles.profileCloseButton}
-              >
-                <Text style={styles.profileCloseText}>×</Text>
-              </Pressable>
-            </View>
-            <View style={styles.prayerList}>
-              {PRAYER_ORDER.map((prayerName) => {
-                const isNextPrayer = prayerName === nextPrayer.name;
-                const isObligatory = prayerName !== 'Sunrise';
-                const prayerCompleted = isObligatory && completedPrayers.includes(prayerName);
-                return (
-                  <View key={prayerName} style={styles.prayerRow}>
-                    <View style={styles.prayerNameGroup}>
-                      <View style={[styles.prayerDot, isNextPrayer && styles.activePrayerDot]} />
-                      <Text style={[styles.prayerName, isNextPrayer && styles.activePrayerName]}>{prayerName}</Text>
-                      {isNextPrayer ? <Text style={styles.nextTag}>NEXT</Text> : null}
-                    </View>
-                    <View style={styles.prayerRowRight}>
-                      <Text style={[styles.prayerTime, isNextPrayer && styles.activePrayerName]}>
-                        {formatPrayerTime(prayerTimes[prayerName], city, localDate)}
-                      </Text>
-                      {isObligatory ? (
-                        <Pressable
-                          accessibilityRole="checkbox"
-                          accessibilityLabel={`${prayerName} prayer completed`}
-                          accessibilityState={{ checked: prayerCompleted }}
-                          onPress={() => togglePrayer(prayerName)}
-                          style={[styles.prayerCheckButton, prayerCompleted && styles.prayerCheckButtonDone]}
-                        >
-                          <Text style={[styles.prayerCheckText, prayerCompleted && styles.prayerCheckTextDone]}>
-                            {prayerCompleted ? '✓' : '○'}
-                          </Text>
-                        </Pressable>
-                      ) : null}
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-            <Text style={styles.settingDescription}>
-              Times are calculated on this device. Choose places to compare schedules across cities and time zones.
-            </Text>
-            <View style={styles.guideActions}>
-              <ActionButton
-                label="Global prayer places"
-                onPress={() => {
-                  setPrayerModalVisible(false);
-                  setScreen('Global');
-                }}
-                palette={palette}
-                styles={styles}
-              />
-              <ActionButton
-                label="Prayer reminders"
-                onPress={() => {
-                  setPrayerModalVisible(false);
-                  setScreen('Settings');
-                }}
-                palette={palette}
-                styles={styles}
-              />
-            </View>
-          </ScrollView>
-        </View>
-      </Modal>
-
-      <Modal
         animationType="fade"
         onRequestClose={() => setUniversalSearchVisible(false)}
         transparent
@@ -2822,6 +2910,31 @@ export default function App() {
             <ActionButton
               label="Understood"
               onPress={() => setCapacityModalVisible(false)}
+              palette={palette}
+              styles={styles}
+            />
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setPrayerCelebrationVisible(false)}
+        transparent
+        visible={prayerCelebrationVisible}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalIcon}>
+              <Text style={styles.modalIconText}>✦</Text>
+            </View>
+            <Text style={styles.modalTitle}>Hooray — you did it!</Text>
+            <Text style={styles.modalMessage}>
+              You marked all five daily prayers. May Allah bless your effort, accept your prayers, and keep you steadfast. May He reward you for this good deed.
+            </Text>
+            <ActionButton
+              label="Hooray!"
+              onPress={() => setPrayerCelebrationVisible(false)}
               palette={palette}
               styles={styles}
             />
@@ -2913,31 +3026,6 @@ function ActionButton({
   disabled = false,
   busy = false,
   danger = false,
-      <Modal
-        animationType="fade"
-        onRequestClose={() => setPrayerCelebrationVisible(false)}
-        transparent
-        visible={prayerCelebrationVisible}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalIcon}>
-              <Text style={styles.modalIconText}>✦</Text>
-            </View>
-            <Text style={styles.modalTitle}>Hooray — you did it!</Text>
-            <Text style={styles.modalMessage}>
-              You marked all five daily prayers. May Allah bless your effort, accept your prayers, and keep you steadfast. May He reward you for this good deed.
-            </Text>
-            <ActionButton
-              label="Hooray!"
-              onPress={() => setPrayerCelebrationVisible(false)}
-              palette={palette}
-              styles={styles}
-            />
-          </View>
-        </View>
-      </Modal>
-
 }: {
   label: string;
   onPress: () => void;
@@ -3012,7 +3100,7 @@ function JumuahTimeField({
           <Text style={styles.jumuahSaveText}>Save</Text>
         </Pressable>
       </View>
-      <Text style={styles.jumuahHelp}>Enter your local mosque’s time in 24-hour format, then save. Leave blank to clear it.</Text>
+      <Text style={styles.jumuahHelp}>Set your local mosque’s Friday prayer time in 24-hour format. This is separate from calculated Zuhr. Leave blank to clear it.</Text>
     </View>
   );
 }
@@ -3082,6 +3170,8 @@ function createStyles(colors: Palette) {
     homeHeader: { flex: 1, flexDirection: 'row', alignItems: 'center' },
     headerSpacer: { flex: 1 },
     contextHeader: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 10 },
+    headerBackButton: { width: 36, height: 40, alignItems: 'center', justifyContent: 'center' },
+    headerBackGlyph: { color: colors.accent, fontSize: 30, lineHeight: 34 },
     contextHeaderGlyph: {
       width: 38,
       height: 38,
@@ -3164,7 +3254,28 @@ function createStyles(colors: Palette) {
     contentScroll: { flex: 1, minHeight: 0 },
     contentMotion: { flexGrow: 1 },
     content: { paddingHorizontal: 20, paddingTop: 7, paddingBottom: 32 },
-    dailyHighlightCard: { padding: 17, marginTop: 9, borderRadius: 18, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
+    qhdPhotoCard: { position: 'relative', overflow: 'hidden', marginTop: 9, borderRadius: 19, borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', backgroundColor: '#14201D' },
+    quotePhotoCard: { position: 'relative', overflow: 'hidden', marginTop: 9, borderRadius: 19, borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', backgroundColor: '#14201D' },
+    qhdPhotoScrim: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(5, 15, 13, 0.79)' },
+    qhdPhotoContent: { padding: 16 },
+    qhdVerse: { paddingBottom: 2 },
+    qhdDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.25)', marginVertical: 13 },
+    qhdLowerRow: { flexDirection: 'row', alignItems: 'stretch', gap: 11 },
+    qhdLowerItem: { flex: 1, minWidth: 0, paddingVertical: 2 },
+    qhdVerticalDivider: { width: 1, backgroundColor: 'rgba(255,255,255,0.25)' },
+    photoCardEyebrow: { color: '#E8D19A', fontSize: 9, fontWeight: '700', letterSpacing: 0.8 },
+    photoCardTitle: { color: '#FFFFFF', fontSize: 13, fontWeight: '700', lineHeight: 18, marginTop: 8 },
+    photoCardBody: { color: 'rgba(255,255,255,0.88)', fontSize: 11, lineHeight: 17, marginTop: 7 },
+    photoCardArabic: { color: '#FFFFFF', fontSize: 17, lineHeight: 29, textAlign: 'right', writingDirection: 'rtl', marginTop: 10 },
+    photoCardLink: { color: '#C9E9D1', fontSize: 9, fontWeight: '700', lineHeight: 14, marginTop: 8 },
+    quotePhotoText: { color: '#FFFFFF', fontSize: 16, lineHeight: 24, fontWeight: '600', marginTop: 13 },
+    photoCardChip: { paddingHorizontal: 9, paddingVertical: 6, borderRadius: 13, borderWidth: 1, borderColor: 'rgba(255,255,255,0.28)', backgroundColor: 'rgba(255,255,255,0.12)' },
+    photoCardChipText: { color: '#FFFFFF', fontSize: 9, fontWeight: '600' },
+    dailyHighlightCard: { position: 'relative', overflow: 'hidden', padding: 17, marginTop: 9, borderRadius: 18, borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', backgroundColor: '#14201D' },
+    highlightPhotoScrim: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(5, 15, 13, 0.72)' },
+    photoCalendarText: { color: '#FFFFFF' },
+    photoCalendarMuted: { color: 'rgba(255,255,255,0.84)' },
+    photoCalendarAccent: { color: '#E8D19A' },
     highlightEyebrow: { color: colors.gold, fontSize: 9, fontWeight: '700', letterSpacing: 0.8 },
     highlightTitle: { color: colors.ink, fontSize: 15, fontWeight: '700', marginTop: 9 },
     highlightBody: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 7 },
@@ -3236,12 +3347,14 @@ function createStyles(colors: Palette) {
     prayerDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.line },
     activePrayerDot: { backgroundColor: colors.gold },
     prayerName: { color: colors.muted, fontSize: 13 },
+    jumuahDot: { backgroundColor: colors.gold },
     activePrayerName: { color: colors.accent, fontWeight: '700' },
     nextTag: { color: colors.gold, fontSize: 8, fontWeight: '700', letterSpacing: 1 },
     prayerTime: { color: colors.ink, fontSize: 13, fontWeight: '500' },
     prayerRowRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
     prayerCheckButton: { width: 27, height: 27, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.line },
     prayerCheckButtonDone: { backgroundColor: colors.accent, borderColor: colors.accent },
+    prayerCheckButtonDisabled: { opacity: 0.4 },
     prayerCheckText: { color: colors.muted, fontSize: 12, fontWeight: '700' },
     prayerCheckTextDone: { color: colors.accentInk },
     inlineCards: { flexDirection: 'row', gap: 10, marginTop: 13 },
@@ -3252,6 +3365,12 @@ function createStyles(colors: Palette) {
       padding: 14,
       backgroundColor: colors.surfaceRaised,
     },
+    photoSoftCard: { position: 'relative', overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)' },
+    softCardScrim: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(5, 15, 13, 0.62)' },
+    photoSoftCardContent: { position: 'relative' },
+    photoSoftCardSymbol: { color: '#E8D19A', fontSize: 17 },
+    photoSoftCardTitle: { color: '#FFFFFF', fontSize: 12, fontWeight: '600', marginTop: 8 },
+    photoSoftCardBody: { color: 'rgba(255,255,255,0.84)', fontSize: 10, marginTop: 4 },
     softCardSymbol: { color: colors.gold, fontSize: 17 },
     softCardTitle: { color: colors.ink, fontSize: 12, fontWeight: '600', marginTop: 8 },
     softCardBody: { color: colors.muted, fontSize: 10, marginTop: 4 },
@@ -3324,22 +3443,7 @@ function createStyles(colors: Palette) {
     },
     jumuahSaveText: { color: colors.accentInk, fontSize: 10, fontWeight: '700' },
     jumuahHelp: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 7 },
-    fridayPrayerCard: {
-      alignItems: 'center',
-      backgroundColor: colors.surfaceRaised,
-      borderColor: colors.gold,
-      borderRadius: 15,
-      borderWidth: StyleSheet.hairlineWidth,
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      marginTop: 12,
-      paddingHorizontal: 14,
-      paddingVertical: 12,
-    },
-    fridayPrayerCopy: { flex: 1, minWidth: 0 },
-    fridayPrayerEyebrow: { color: colors.gold, fontSize: 9, fontWeight: '700' },
-    fridayPrayerTitle: { color: colors.ink, fontSize: 12, fontWeight: '600', marginTop: 3 },
-    fridayPrayerTime: { color: colors.accent, fontSize: 14, fontWeight: '700', marginLeft: 12 },
+    fixedCityBadge: { color: colors.gold, fontSize: 9, fontWeight: '800', letterSpacing: 0.7, paddingHorizontal: 8, paddingVertical: 6 },
     removeCityButton: {
       width: 32,
       height: 32,
@@ -3350,7 +3454,6 @@ function createStyles(colors: Palette) {
     },
     removeCityText: { color: colors.muted, fontSize: 20, lineHeight: 21 },
     helperText: { color: colors.muted, fontSize: 10, lineHeight: 16, marginTop: 9 },
-    prayerCheckButtonDisabled: { opacity: 0.4 },
     routineCard: { borderRadius: 21, padding: 18, backgroundColor: colors.surface, marginBottom: 13 },
     routineIcon: {
       width: 38,
@@ -3700,20 +3803,8 @@ function createStyles(colors: Palette) {
     methodChoiceText: { color: colors.muted, fontSize: 11 },
     healthMessage: { color: colors.accent, fontSize: 11, lineHeight: 17, marginTop: 10 },
     privacyNote: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 11 },
-    digestText: { color: colors.accent, fontSize: 13, fontWeight: '600', marginTop: 12 },
-    keyInput: {
-      height: 43,
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor: colors.line,
-      paddingHorizontal: 12,
-      color: colors.ink,
-      fontSize: 12,
-      marginTop: 12,
-    },
-    lockLink: { color: colors.muted, textAlign: 'center', fontSize: 11, marginTop: 12 },
-    supportRow: { flexDirection: 'row', gap: 9, marginTop: 14 },
-    supportButton: { flex: 1, backgroundColor: colors.surfaceRaised, padding: 12, borderRadius: 13 },
+    supportRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginTop: 14 },
+    supportButton: { flexGrow: 1, flexBasis: '45%', backgroundColor: colors.surfaceRaised, padding: 12, borderRadius: 13 },
     supportLabel: { color: colors.muted, fontSize: 9, fontWeight: '700', letterSpacing: 0.6 },
     supportHandle: { color: colors.accent, fontSize: 12, fontWeight: '600', marginTop: 5 },
     footer: { alignItems: 'center', marginTop: 27, marginBottom: 6 },

@@ -1,18 +1,4 @@
-const { createHash } = require('node:crypto');
-
 module.exports = ({ config }) => {
-  const masterKey = process.env.LIXZON_MASTER_KEY;
-  if (masterKey && Buffer.byteLength(masterKey, 'utf8') < 32) {
-    throw new Error('LIXZON_MASTER_KEY must be at least 32 bytes; generate a strong random key.');
-  }
-
-  const extra = { ...config.extra };
-  if (masterKey) {
-    extra.developerKeyDigest = createHash('sha256').update(masterKey, 'utf8').digest('hex');
-  } else {
-    delete extra.developerKeyDigest;
-  }
-
   return {
     ...config,
     name: config.name ?? 'Mishkah',
@@ -41,11 +27,11 @@ module.exports = ({ config }) => {
       ...(process.env.GITHUB_PAGES === 'true' ? { baseUrl: '/Mishkah/' } : {}),
     },
     extra: {
-      ...extra,
+      ...config.extra,
       rafiqApiUrl: process.env.EXPO_PUBLIC_RAFIQ_API_URL ?? '',
       supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL ?? '',
       supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '',
-      furqanBaseUrl: process.env.EXPO_PUBLIC_FURQAN_URL ?? 'https://furqan-quran-app.vercel.app',
+      furqanBaseUrl: process.env.EXPO_PUBLIC_FURQAN_URL?.trim() || 'https://furqan-quran-app.vercel.app',
     },
   };
 };

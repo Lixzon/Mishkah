@@ -77,7 +77,8 @@ not a UI change.
 ### Pairing with Furqan
 
 Mishkah and Furqan share progress through one private 20-character pairing
-code; there is no Google or email sign-in. Set `EXPO_PUBLIC_SUPABASE_URL` and
+code without Google sign-in or an account login. Cloud backup uses a separate
+email-code flow. Set `EXPO_PUBLIC_SUPABASE_URL` and
 `EXPO_PUBLIC_SUPABASE_ANON_KEY` for the shared Supabase project, apply both
 migrations listed in `SUPABASE_SETUP.md`, then create a code in Furqan
 (Settings -> Pair Mishkah) and enter it in Mishkah (Settings -> Pair with
@@ -89,8 +90,10 @@ stored in SecureStore on native devices and AsyncStorage on web. Unpairing
 removes it from this device only.
 
 Without those settings Mishkah stays local-only and does not claim that sync
-is active. The weekly system report in Settings shows storage, preferences,
-pairing, and today's verse, and stays on the device.
+is active. The private health report in Settings checks storage, preferences,
+pairing, and today's verse. It is not retained in app storage. When requested,
+Mishkah opens a pre-addressed email draft containing check results, start/end
+times, and duration; the user reviews and sends it from their email app.
 
 ### Rafiq online answers
 
@@ -140,30 +143,11 @@ documented in [Furqan's Rafiq setup guide](https://github.com/Lixzon/furqan-qura
   `src/services/rafiq.ts` optionally calls a secured backend for current online
   answers and validates that its cited source links use HTTPS.
 
-## Developer diagnostics key
-
-Developer tools are locked unless `LIXZON_MASTER_KEY` is present in the local
-build environment. The build config requires at least 32 bytes and places only
-its SHA-256 digest in the application configuration. The key itself is never
-written to source files or app storage.
-
-In PowerShell, set a unique random value in the build shell before starting
-Expo or creating a native build:
-
-```powershell
-$env:LIXZON_MASTER_KEY = '<unique random value of at least 32 bytes>'
-npx expo start
-```
-
-Do not commit the key or use it as a server credential. A key check inside a
-mobile application is a local access gate, not a security boundary against a
-modified or compromised device. The diagnostic buffer is protected at rest
-with a per-install encryption key in the platform secure store.
-
 ## Privacy and visual design
 
-Mishkah uses no background photography or external image assets. Its
-water-inspired palette and decorative details are geometric and symbolic.
-Pinned places, schedules, reminders, checklist selections, guide questions,
-and diagnostic data remain on the device. Instagram and Discord links open
-only when the user taps them.
+Home and sharing cards use bundled photographs of nature with no people or
+animals. Pinned places, schedules, reminders, checklist selections, guide
+questions, and encrypted diagnostic data remain on the device. A health report
+is emailed only after the user chooses the report action and confirms sending
+in their mail app; it contains check summaries, not crash-log contents.
+Instagram, Discord, and email links open only when the user taps them.

@@ -20,6 +20,20 @@ export interface UpcomingIslamicEvent extends IslamicEvent {
   hijriYear: number;
 }
 
+export interface RamadanNight {
+  hijriDay: number;
+  beginsAt: string;
+}
+
+export interface RamadanCalendarDates {
+  firstFast: string;
+  lastFast: string;
+  finalHijriDay: number;
+  eidAlFitr: string;
+  finalTenNights: RamadanNight[];
+  oddNights: RamadanNight[];
+}
+
 export const HIJRI_MONTHS = [
   'Muharram',
   'Safar',
@@ -128,4 +142,44 @@ export function getUpcomingIslamicEvents(localDate: string, limit = 4): Upcoming
     throw new Error(`Could only find ${upcoming.length} upcoming Islamic calendar events from Hijri year ${currentYear}.`);
   }
   return upcoming;
+}
+
+export function getRamadanCalendarDates(firstFast: string): RamadanCalendarDates {
+  const firstHijriDate = getIslamicDate(firstFast);
+  if (firstHijriDate.month !== 9 || firstHijriDate.day !== 1) {
+    throw new RangeError('The supplied date must be 1 Ramadan in the selected calendar.');
+  }
+
+  const ramadanDates: Array<{ hijriDay: number; date: string }> = [];
+  for (let offset = 0; offset <= 30; offset += 1) {
+    const date = addCalendarDays(firstFast, offset);
+    const hijri = getIslamicDate(date);
+    if (hijri.year !== firstHijriDate.year || hijri.month !== 9) break;
+    ramadanDates.push({ hijriDay: hijri.day, date });
+  }
+
+  if (ramadanDates.length !== 29 && ramadanDates.length !== 30) {
+    throw new Error(`The calendar returned ${ramadanDates.length} days for Ramadan; expected 29 or 30.`);
+  }
+
+  const lastRamadanDate = ramadanDates[ramadanDates.length - 1];
+  if (!lastRamadanDate) throw new Error('The calendar did not return Ramadan end dates.');
+  const eidAlFitr = addCalendarDays(lastRamadanDate.date, 1);
+  const shawwalStart = getIslamicDate(eidAlFitr);
+  if (shawwalStart.month !== 10 || shawwalStart.day !== 1 || shawwalStart.year !== firstHijriDate.year) {
+    throw new Error('The calendar could not confirm the first day of Shawwal after Ramadan.');
+  }
+
+  const finalTenNights = ramadanDates.slice(-10).map(({ hijriDay, date }) => ({
+    hijriDay,
+    beginsAt: addCalendarDays(date, -1),
+  }));
+  return {
+    firstFast,
+    lastFast: lastRamadanDate.date,
+    finalHijriDay: lastRamadanDate.hijriDay,
+    eidAlFitr,
+    finalTenNights,
+    oddNights: finalTenNights.filter(({ hijriDay }) => hijriDay % 2 === 1),
+  };
 }

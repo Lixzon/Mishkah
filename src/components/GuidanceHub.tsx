@@ -1,10 +1,10 @@
 import * as Location from 'expo-location';
 import { Magnetometer } from 'expo-sensors';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { City } from '../domain/cities';
 import { getQiblaBearing, normalizeHeading, relativeQiblaHeading } from '../domain/qibla';
-import { WELLNESS_GUIDANCE } from '../domain/guidance';
+import { EVERYDAY_MOMENTS, LESSER_KNOWN_DUAS, PRACTICAL_GUIDANCE } from '../domain/guidance';
 
 type GuidancePalette = {
   background: string;
@@ -28,7 +28,19 @@ interface GuidanceHubProps {
 
 type Coordinates = { latitude: number; longitude: number };
 
-export function GuidanceHub({ city, hour, initialSection = 'overview', palette }: GuidanceHubProps) {
+const GUIDANCE_PHOTOS = [
+  require('../../assets/share-backgrounds/ocean.jpg'),
+  require('../../assets/share-backgrounds/mountain-valley.jpg'),
+  require('../../assets/share-backgrounds/mountain-starry.jpg'),
+  require('../../assets/share-backgrounds/alpine-range.jpg'),
+  require('../../assets/share-backgrounds/forest-sunrise.jpg'),
+  require('../../assets/share-backgrounds/lakeshore.jpg'),
+  require('../../assets/share-backgrounds/sky.jpg'),
+  require('../../assets/share-backgrounds/snow.jpg'),
+  require('../../assets/share-backgrounds/skyline.jpg'),
+] as const;
+
+export function GuidanceHub({ city, initialSection = 'overview', palette }: GuidanceHubProps) {
   const [section, setSection] = useState<'overview' | 'qibla' | 'wellness'>(initialSection);
   const [coordinates, setCoordinates] = useState<Coordinates>({
     latitude: city.latitude,
@@ -39,6 +51,7 @@ export function GuidanceHub({ city, hour, initialSection = 'overview', palette }
   const [compassEnabled, setCompassEnabled] = useState(false);
   const [compassError, setCompassError] = useState('');
   const [locationError, setLocationError] = useState('');
+  const [referenceError, setReferenceError] = useState('');
   const [isLocating, setIsLocating] = useState(false);
   const subscription = useRef<ReturnType<typeof Magnetometer.addListener> | null>(null);
   const styles = useMemo(() => createStyles(palette), [palette]);
@@ -46,20 +59,6 @@ export function GuidanceHub({ city, hour, initialSection = 'overview', palette }
   const pointerRotation = heading === null
     ? qiblaBearing
     : relativeQiblaHeading(qiblaBearing, heading);
-  const contextualTitle = hour >= 4 && hour < 12
-    ? 'Morning adhkar'
-    : hour >= 17 && hour < 22
-      ? 'Evening remembrance'
-      : hour >= 22 || hour < 4
-        ? 'A quiet moment before sleep'
-        : 'A moment to pause';
-  const contextualBody = hour >= 4 && hour < 12
-    ? 'Begin the day with remembrance and a prayer for well-being.'
-    : hour >= 17 && hour < 22
-      ? 'Close the day with evening remembrance and gratitude.'
-      : hour >= 22 || hour < 4
-        ? 'Settle into your evening with the supplication before sleep.'
-        : 'Return to remembrance whenever you need a gentle pause.';
 
   useEffect(() => {
     setSection(initialSection);
@@ -142,13 +141,32 @@ export function GuidanceHub({ city, hour, initialSection = 'overview', palette }
     }
   };
 
+  const openSource = async (url: string) => {
+    setReferenceError('');
+    try {
+      await Linking.openURL(url);
+    } catch (error) {
+      setReferenceError(error instanceof Error ? error.message : 'The source could not be opened.');
+    }
+  };
+
+  const renderSources = (sources: readonly { label: string; url: string }[]) => (
+    <View style={styles.sourceRow}>
+      {sources.map((source) => (
+        <Pressable key={source.url} accessibilityRole="link" onPress={() => void openSource(source.url)}>
+          <Text style={styles.sourceLink}>{source.label} ↗</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+
   return (
     <View style={styles.container}>
       <View style={styles.sectionSwitch}>
         {([
-          { id: 'overview', label: 'Sunnah' },
+          { id: 'overview', label: 'Muslim life' },
           { id: 'qibla', label: 'Qibla' },
-          { id: 'wellness', label: 'At-Tibb & Adab' },
+          { id: 'wellness', label: 'Du’as & moments' },
         ] as const).map((item) => (
           <Pressable
             accessibilityRole="tab"
@@ -165,73 +183,126 @@ export function GuidanceHub({ city, hour, initialSection = 'overview', palette }
       </View>
 
       {section === 'overview' ? (
-        <View style={styles.card}>
-          <Text style={styles.eyebrow}>A SUNNAH FOR THIS MOMENT</Text>
-          <Text style={styles.title}>{contextualTitle}</Text>
-          <Text style={styles.body}>{contextualBody}</Text>
-          <Pressable accessibilityRole="button" onPress={() => setSection('wellness')} style={styles.linkButton}>
-            <Text style={styles.linkText}>Explore wellness and Adab</Text>
-            <Text style={styles.linkArrow}>›</Text>
-          </Pressable>
-        </View>
+        <>
+          <View style={styles.photoCard}>
+            <Image source={GUIDANCE_PHOTOS[0]} resizeMode="cover" style={styles.photo} />
+            <View style={styles.photoScrim} />
+            <View style={styles.photoAccent} />
+            <View style={styles.photoContent}>
+              <Text style={styles.eyebrow}>GUIDANCE FOR EVERYDAY MUSLIM LIFE</Text>
+              <Text style={styles.title}>Faith in the things we do every day.</Text>
+              <Text style={styles.body}>Explore worship, character, food, rest, wellbeing, family, and daily activities. Each card points to Qur’an or hadith sources where available. Summaries are not fatwas or medical advice.</Text>
+            </View>
+          </View>
+          {PRACTICAL_GUIDANCE.map((item, index) => (
+            <View key={item.id} style={styles.photoCard}>
+              <Image source={GUIDANCE_PHOTOS[(index + 1) % GUIDANCE_PHOTOS.length]} resizeMode="cover" style={styles.photo} />
+              <View style={styles.photoScrim} />
+              <View style={styles.photoAccent} />
+              <View style={styles.photoContent}>
+                <Text style={styles.eyebrow}>PRACTICE · {item.title.toUpperCase()}</Text>
+                <Text style={styles.title}>{item.summary}</Text>
+                <Text style={styles.body}>{item.practice}</Text>
+                {renderSources(item.sources)}
+              </View>
+            </View>
+          ))}
+        </>
       ) : null}
 
       {section === 'qibla' ? (
-        <View style={styles.card}>
-          <Text style={styles.eyebrow}>DIRECTION OF PRAYER</Text>
-          <Text style={styles.title}>Qibla compass</Text>
-          <Text style={styles.body}>{locationLabel}</Text>
-          <View style={styles.compass}>
-            <View style={styles.compassNorth}><Text style={styles.northLabel}>N</Text></View>
-            <View style={[styles.qiblaPointer, { transform: [{ rotate: `${pointerRotation}deg` }] }]}>
-              <View style={styles.pointerTop} />
-              <View style={styles.pointerBottom} />
+        <View style={styles.photoCard}>
+          <Image source={GUIDANCE_PHOTOS[3]} resizeMode="cover" style={styles.photo} />
+          <View style={styles.photoScrim} />
+          <View style={styles.photoAccent} />
+          <View style={styles.photoContent}>
+            <Text style={styles.eyebrow}>DIRECTION OF PRAYER</Text>
+            <Text style={styles.title}>Qibla compass</Text>
+            <Text style={styles.body}>{locationLabel}</Text>
+            <View style={styles.compass}>
+              <View style={styles.compassNorth}><Text style={styles.northLabel}>N</Text></View>
+              <View style={[styles.qiblaPointer, { transform: [{ rotate: `${pointerRotation}deg` }] }]}>
+                <View style={styles.pointerTop} />
+                <View style={styles.pointerBottom} />
+              </View>
+              <View style={styles.compassCenter}><Text style={styles.kaaba}>◆</Text></View>
             </View>
-            <View style={styles.compassCenter}><Text style={styles.kaaba}>◆</Text></View>
+            <Text style={styles.bearing}>{Math.round(qiblaBearing)}° from true north</Text>
+            <View style={styles.actionRow}>
+              <Pressable accessibilityRole="button" disabled={isLocating} onPress={() => void useCurrentLocation()} style={[styles.actionButton, isLocating && styles.disabledButton]}>
+                <Text style={styles.actionText}>{isLocating ? 'Finding location…' : 'Use current location'}</Text>
+              </Pressable>
+              <Pressable accessibilityRole="switch" accessibilityState={{ checked: compassEnabled }} onPress={() => {
+                setCompassError('');
+                setCompassEnabled((enabled) => !enabled);
+                if (compassEnabled) setHeading(null);
+              }} style={[styles.actionButton, compassEnabled && styles.actionButtonActive]}>
+                <Text style={[styles.actionText, compassEnabled && styles.actionTextActive]}>
+                  {compassEnabled ? 'Compass on' : 'Enable compass'}
+                </Text>
+              </Pressable>
+            </View>
+            {locationError ? <Text accessibilityRole="alert" style={styles.error}>{locationError}</Text> : null}
+            {compassError ? <Text accessibilityRole="alert" style={styles.error}>{compassError}</Text> : null}
+            <Text style={styles.disclosure}>Compass readings are approximate and may be affected by nearby metal or magnetic interference. You can use the bearing from north without granting location access.</Text>
           </View>
-          <Text style={styles.bearing}>{Math.round(qiblaBearing)}° from true north</Text>
-          <View style={styles.actionRow}>
-            <Pressable accessibilityRole="button" disabled={isLocating} onPress={() => void useCurrentLocation()} style={[styles.actionButton, isLocating && styles.disabledButton]}>
-              <Text style={styles.actionText}>{isLocating ? 'Finding location…' : 'Use current location'}</Text>
-            </Pressable>
-            <Pressable accessibilityRole="switch" accessibilityState={{ checked: compassEnabled }} onPress={() => {
-              setCompassError('');
-              setCompassEnabled((enabled) => !enabled);
-              if (compassEnabled) setHeading(null);
-            }} style={[styles.actionButton, compassEnabled && styles.actionButtonActive]}>
-              <Text style={[styles.actionText, compassEnabled && styles.actionTextActive]}>
-                {compassEnabled ? 'Compass on' : 'Enable compass'}
-              </Text>
-            </Pressable>
-          </View>
-          {locationError ? <Text accessibilityRole="alert" style={styles.error}>{locationError}</Text> : null}
-          {compassError ? <Text accessibilityRole="alert" style={styles.error}>{compassError}</Text> : null}
-          <Text style={styles.disclosure}>Compass readings are approximate and may be affected by nearby metal or magnetic interference. You can use the bearing from north without granting location access.</Text>
         </View>
       ) : null}
 
       {section === 'wellness' ? (
         <>
-          <View style={styles.card}>
-            <Text style={styles.eyebrow}>AT-TIBB · FOOD AND WELLNESS</Text>
-            <Text style={styles.title}>Prophetic tradition, with care.</Text>
-            <Text style={styles.body}>These notes are educational and do not diagnose, treat, or prevent illness. Ask a qualified clinician before changing treatment or using supplements.</Text>
+          <View style={styles.photoCard}>
+            <Image source={GUIDANCE_PHOTOS[5]} resizeMode="cover" style={styles.photo} />
+            <View style={styles.photoScrim} />
+            <View style={styles.photoAccent} />
+            <View style={styles.photoContent}>
+              <Text style={styles.eyebrow}>DU’AS FOR DAILY LIFE</Text>
+              <Text style={styles.title}>Supplications for familiar and difficult moments.</Text>
+              <Text style={styles.body}>Read the meaning and check the Qur’an or hadith reference. A dua is worship—not a guarantee of a particular outcome.</Text>
+            </View>
           </View>
-          {WELLNESS_GUIDANCE.map((item) => (
-            <View key={item.id} style={styles.wellnessCard}>
-              <Text style={styles.wellnessTitle}>{item.title}</Text>
-              <Text style={styles.body}>{item.summary}</Text>
-              <Text style={styles.tradition}>{item.tradition}</Text>
-              <Text style={styles.disclosure}>{item.practicalNote}</Text>
+          <View style={styles.sectionHeading}>
+            <Text style={styles.eyebrow}>LESS-KNOWN, USEFUL DU’AS</Text>
+            <Text style={styles.sectionDescription}>Less frequently shared supplications, with their sources and context.</Text>
+          </View>
+          {LESSER_KNOWN_DUAS.map((item, index) => (
+            <View key={item.id} style={styles.photoCard}>
+              <Image source={GUIDANCE_PHOTOS[(index + 2) % GUIDANCE_PHOTOS.length]} resizeMode="cover" style={styles.photo} />
+              <View style={styles.photoScrim} />
+              <View style={styles.photoAccent} />
+              <View style={styles.photoContent}>
+                <Text style={styles.eyebrow}>A LESS-KNOWN DU’A</Text>
+                <Text style={styles.title}>{item.moment}</Text>
+                {item.arabic ? <Text style={styles.arabic}>{item.arabic}</Text> : null}
+                {item.transliteration ? <Text style={styles.transliteration}>{item.transliteration}</Text> : null}
+                <Text style={styles.body}>{item.meaning}</Text>
+                {item.practice ? <Text style={styles.disclosure}>{item.practice}</Text> : null}
+                {renderSources(item.sources)}
+              </View>
             </View>
           ))}
-          <View style={styles.card}>
-            <Text style={styles.eyebrow}>ADAB & DAILY LIFE</Text>
-            <Text style={styles.title}>Small, considerate habits.</Text>
-            <Text style={styles.body}>Eat and drink with moderation, give thanks, keep shared spaces clean, and avoid causing harm. Specific rulings can vary; consult a trusted scholar for religious guidance.</Text>
+          <View style={styles.sectionHeading}>
+            <Text style={styles.eyebrow}>DU’AS FOR EVERYDAY MOMENTS</Text>
           </View>
+          {EVERYDAY_MOMENTS.map((item, index) => (
+            <View key={item.id} style={styles.photoCard}>
+              <Image source={GUIDANCE_PHOTOS[(index + 6) % GUIDANCE_PHOTOS.length]} resizeMode="cover" style={styles.photo} />
+              <View style={styles.photoScrim} />
+              <View style={styles.photoAccent} />
+              <View style={styles.photoContent}>
+                <Text style={styles.eyebrow}>A DU’A OR REMEMBRANCE</Text>
+                <Text style={styles.title}>{item.moment}</Text>
+                {item.arabic ? <Text style={styles.arabic}>{item.arabic}</Text> : null}
+                {item.transliteration ? <Text style={styles.transliteration}>{item.transliteration}</Text> : null}
+                <Text style={styles.body}>{item.meaning}</Text>
+                {item.practice ? <Text style={styles.disclosure}>{item.practice}</Text> : null}
+                {renderSources(item.sources)}
+              </View>
+            </View>
+          ))}
         </>
       ) : null}
+      {referenceError ? <Text accessibilityRole="alert" style={styles.error}>{referenceError}</Text> : null}
     </View>
   );
 }
@@ -244,32 +315,36 @@ function createStyles(colors: GuidancePalette) {
     sectionButtonActive: { backgroundColor: colors.accent },
     sectionButtonText: { color: colors.muted, fontSize: 10, fontWeight: '700' },
     sectionButtonTextActive: { color: colors.accentInk },
-    card: { padding: 17, borderRadius: 18, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
-    eyebrow: { color: colors.gold, fontSize: 9, fontWeight: '700', letterSpacing: 1.3 },
-    title: { color: colors.ink, fontSize: 17, fontWeight: '700', marginTop: 8 },
-    body: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 7 },
-    linkButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, paddingTop: 11, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line },
-    linkText: { color: colors.accent, fontSize: 11, fontWeight: '700' },
-    linkArrow: { color: colors.accent, fontSize: 20 },
-    compass: { width: 218, height: 218, alignSelf: 'center', marginTop: 18, borderRadius: 109, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surfaceRaised, alignItems: 'center', justifyContent: 'center' },
+    sectionHeading: { gap: 5, paddingHorizontal: 2, paddingTop: 6 },
+    sectionDescription: { color: colors.muted, fontSize: 11, lineHeight: 17 },
+    photoCard: { position: 'relative', overflow: 'hidden', borderRadius: 18, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', backgroundColor: '#11201D' },
+    photo: { ...StyleSheet.absoluteFill, width: '100%', height: '100%' },
+    photoScrim: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(5, 18, 19, 0.72)' },
+    photoAccent: { position: 'absolute', left: 0, top: 17, bottom: 17, width: 3, borderRadius: 2, backgroundColor: colors.gold },
+    photoContent: { padding: 17, paddingLeft: 21 },
+    eyebrow: { color: '#F3DEAE', fontSize: 9, fontWeight: '700', letterSpacing: 1.1 },
+    title: { color: '#FFFFFF', fontSize: 16, fontWeight: '700', lineHeight: 23, marginTop: 8 },
+    body: { color: '#FFFFFF', fontSize: 12, lineHeight: 19, marginTop: 8, opacity: 0.94 },
+    arabic: { color: '#FFFFFF', fontSize: 21, lineHeight: 40, marginTop: 12, textAlign: 'right', writingDirection: 'rtl' },
+    transliteration: { color: '#F3DEAE', fontSize: 11, lineHeight: 18, marginTop: 8 },
+    disclosure: { color: '#FFFFFF', fontSize: 10, lineHeight: 16, marginTop: 9, opacity: 0.82 },
+    sourceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 12 },
+    sourceLink: { color: '#F3DEAE', fontSize: 10, fontWeight: '700', paddingVertical: 4 },
+    compass: { width: 218, height: 218, alignSelf: 'center', marginTop: 18, borderRadius: 109, borderWidth: 1, borderColor: 'rgba(255,255,255,0.45)', backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center' },
     compassNorth: { position: 'absolute', top: 13, width: 24, alignItems: 'center' },
-    northLabel: { color: colors.muted, fontSize: 11, fontWeight: '800' },
+    northLabel: { color: '#FFFFFF', fontSize: 11, fontWeight: '800' },
     qiblaPointer: { position: 'absolute', top: 24, bottom: 24, width: 24, alignItems: 'center', justifyContent: 'space-between' },
-    pointerTop: { width: 0, height: 0, borderLeftWidth: 10, borderRightWidth: 10, borderBottomWidth: 44, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderBottomColor: colors.accent },
-    pointerBottom: { width: 0, height: 0, borderLeftWidth: 7, borderRightWidth: 7, borderTopWidth: 31, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderTopColor: colors.muted, opacity: 0.6 },
+    pointerTop: { width: 0, height: 0, borderLeftWidth: 10, borderRightWidth: 10, borderBottomWidth: 44, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderBottomColor: colors.gold },
+    pointerBottom: { width: 0, height: 0, borderLeftWidth: 7, borderRightWidth: 7, borderTopWidth: 31, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderTopColor: '#FFFFFF', opacity: 0.6 },
     compassCenter: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line, alignItems: 'center', justifyContent: 'center' },
     kaaba: { color: colors.gold, fontSize: 17 },
-    bearing: { color: colors.accent, fontSize: 15, fontWeight: '700', textAlign: 'center', marginTop: 9 },
+    bearing: { color: '#F3DEAE', fontSize: 15, fontWeight: '700', textAlign: 'center', marginTop: 9 },
     actionRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 14 },
-    actionButton: { minHeight: 39, paddingHorizontal: 13, borderRadius: 20, borderWidth: 1, borderColor: colors.line, alignItems: 'center', justifyContent: 'center' },
+    actionButton: { minHeight: 39, paddingHorizontal: 13, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.45)', alignItems: 'center', justifyContent: 'center' },
     actionButtonActive: { backgroundColor: colors.accent, borderColor: colors.accent },
-    actionText: { color: colors.accent, fontSize: 10, fontWeight: '700' },
+    actionText: { color: '#FFFFFF', fontSize: 10, fontWeight: '700' },
     actionTextActive: { color: colors.accentInk },
     disabledButton: { opacity: 0.55 },
-    error: { color: '#A44343', fontSize: 10, lineHeight: 15, textAlign: 'center', marginTop: 8 },
-    disclosure: { color: colors.muted, fontSize: 9, lineHeight: 14, marginTop: 10 },
-    wellnessCard: { padding: 15, borderRadius: 16, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
-    wellnessTitle: { color: colors.ink, fontSize: 13, fontWeight: '700' },
-    tradition: { color: colors.accent, fontSize: 9, fontWeight: '700', marginTop: 7 },
+    error: { color: '#FFD4CB', fontSize: 10, lineHeight: 15, marginTop: 8 },
   });
 }

@@ -21,16 +21,19 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { ARCHIVE_CATEGORIES, searchIslamicArchive } from '../domain/archives';
+import { ARCHIVE_CATEGORIES, ISLAMIC_ARCHIVE, searchIslamicArchive } from '../domain/archives';
 import type { AdhkarEntry, DuaEntry } from '../domain/adhkar';
 import { EVENING_ADHKAR, HISN_AL_MUSLIM_DUAS, MORNING_ADHKAR, searchDuas } from '../domain/adhkar';
 import {
-  getDailyHadith,
   HADITH_COLLECTIONS,
   searchHadiths,
   type HadithCollection,
   type HadithEntry,
 } from '../domain/hadith';
+import { ISLAMIC_QUOTES } from '../domain/islamicQuotes';
+import type { getQuoteOfTheDay } from '../domain/islamicQuotes';
+import { dailyQhdIndex } from '../domain/dailyQhdReminder';
+import type { getDailyQhdReminder } from '../domain/dailyQhdReminder';
 import {
   CUSTOM_DHIKR_TARGETS,
   incrementDhikrCount,
@@ -44,7 +47,7 @@ import type { AppPreferences } from '../services/preferences';
 import { getReciterAudioUrl, QURAN_RECITERS } from '../domain/reciters';
 import { StoriesHub } from './StoriesHub';
 
-export type WorshipTab = 'Hadith' | 'Tasbeeh' | 'Adhkar' | 'Duas' | 'Reciters' | 'Archives';
+export type WorshipTab = 'Hadith' | 'Sayings' | 'Tasbeeh' | 'Adhkar' | 'Duas' | 'Reciters' | 'Archives';
 type Period = 'morning' | 'evening';
 
 export interface WorshipPalette {
@@ -64,6 +67,8 @@ interface WorshipHubProps {
   preferences: AppPreferences;
   palette: WorshipPalette;
   date: string;
+  dailyQhd: ReturnType<typeof getDailyQhdReminder>;
+  dailyQuote: ReturnType<typeof getQuoteOfTheDay>;
   furqanBaseUrl: string;
   initialTab?: WorshipTab;
   featuresUnlocked: readonly string[];
@@ -71,12 +76,17 @@ interface WorshipHubProps {
   onNotice: (message: string) => void;
 }
 
-const TABS: readonly WorshipTab[] = ['Hadith', 'Tasbeeh', 'Adhkar', 'Duas', 'Reciters', 'Archives'];
+const TABS: readonly WorshipTab[] = ['Hadith', 'Sayings', 'Tasbeeh', 'Adhkar', 'Duas', 'Reciters', 'Archives'];
 const SHARE_SCENES = [
   { id: 'ocean', label: 'Ocean', source: require('../../assets/share-backgrounds/ocean.jpg') },
   { id: 'snow', label: 'Snow', source: require('../../assets/share-backgrounds/snow.jpg') },
   { id: 'sky', label: 'Clouds', source: require('../../assets/share-backgrounds/sky.jpg') },
   { id: 'skyline', label: 'City', source: require('../../assets/share-backgrounds/skyline.jpg') },
+  { id: 'mountain-starry', label: 'Starry mountains', source: require('../../assets/share-backgrounds/mountain-starry.jpg') },
+  { id: 'mountain-valley', label: 'Mountain valley', source: require('../../assets/share-backgrounds/mountain-valley.jpg') },
+  { id: 'alpine-range', label: 'Alpine range', source: require('../../assets/share-backgrounds/alpine-range.jpg') },
+  { id: 'forest-sunrise', label: 'Forest sunrise', source: require('../../assets/share-backgrounds/forest-sunrise.jpg') },
+  { id: 'lakeshore', label: 'Lakeshore', source: require('../../assets/share-backgrounds/lakeshore.jpg') },
 ] as const;
 const DUA_CATEGORIES: readonly (DuaEntry['category'] | 'all')[] = [
   'all',
@@ -87,6 +97,11 @@ const DUA_CATEGORIES: readonly (DuaEntry['category'] | 'all')[] = [
   'home',
   'food',
   'forgiveness',
+  'mercy',
+  'salah',
+  'charity',
+  'character',
+  'provision',
 ];
 
 function categoryLabel(category: string): string {
@@ -159,11 +174,11 @@ function duaShareText(entry: DuaEntry): string {
   return `${entry.title}\n${entry.arabic}\n${entry.transliteration}\n${entry.meaning}\n\n${entry.reference}`;
 }
 
-export function WorshipHub({ preferences, palette, date, furqanBaseUrl, initialTab = 'Hadith', featuresUnlocked, onPreferencesChange, onNotice }: WorshipHubProps) {
+export function WorshipHub({ preferences, palette, date, dailyQhd: dailyQhdSelection, dailyQuote: dailyQuoteSelection, furqanBaseUrl, initialTab = 'Hadith', featuresUnlocked, onPreferencesChange, onNotice }: WorshipHubProps) {
   const [tab, setTab] = useState<WorshipTab>(initialTab);
   const [hadithQuery, setHadithQuery] = useState('');
   const [hadithCollection, setHadithCollection] = useState<HadithCollection | 'all'>('all');
-  const [selectedHadithId, setSelectedHadithId] = useState(() => getDailyHadith().id);
+  const [selectedHadithId, setSelectedHadithId] = useState(dailyQhdSelection.hadith.id);
   const [hadithDetail, setHadithDetail] = useState<HadithEntry | null>(null);
   const [period, setPeriod] = useState<Period>('morning');
   const [duaQuery, setDuaQuery] = useState('');
@@ -182,6 +197,10 @@ export function WorshipHub({ preferences, palette, date, furqanBaseUrl, initialT
   const audioPlayer = useAudioPlayer(null);
   const audioStatus = useAudioPlayerStatus(audioPlayer);
   const styles = useMemo(() => createStyles(palette), [palette]);
+
+  useEffect(() => {
+    setSelectedHadithId(dailyQhdSelection.hadith.id);
+  }, [dailyQhdSelection.hadith.id]);
 
   const customPresets: TasbeehPreset[] = preferences.customDhikr.map((item) => ({
     id: item.id,
@@ -204,13 +223,56 @@ export function WorshipHub({ preferences, palette, date, furqanBaseUrl, initialT
   const allowedHadiths = extendedHadithUnlocked
     ? HADITH_COLLECTIONS
     : HADITH_COLLECTIONS.filter((entry) => entry.collection === 'nawawi40');
-  const selectedHadith = allowedHadiths.find((item) => item.id === selectedHadithId) ?? getDailyHadith();
+  const dailyQhd = dailyQhdSelection;
+  const dailyHadith = dailyQhd.hadith;
+  const dailyQuote = dailyQuoteSelection;
+  const archiveSpotlight = ISLAMIC_ARCHIVE[dailyQhdIndex() % ISLAMIC_ARCHIVE.length];
   const shareScene = SHARE_SCENES.find((scene) => scene.id === shareSceneId) ?? SHARE_SCENES[0];
   const resolvedShareScene = Asset.fromModule(shareScene.source);
   const filteredHadiths = searchHadiths(hadithQuery, hadithCollection)
     .filter((entry) => extendedHadithUnlocked || entry.collection === 'nawawi40');
   const filteredDuas = searchDuas(duaQuery, duaCategory);
   const filteredArchive = searchIslamicArchive(archiveQuery, archiveCategory);
+
+  const renderPhotoSummaryCard = ({
+    source,
+    eyebrow,
+    title,
+    summary,
+    arabic,
+    transliteration,
+    reference,
+    disclosure,
+    action,
+  }: {
+    source: number;
+    eyebrow: string;
+    title: string;
+    summary: string;
+    arabic?: string;
+    transliteration?: string;
+    reference?: string;
+    disclosure?: string;
+    action?: { label: string; onPress: () => void };
+  }) => (
+    <View style={styles.hadithCard}>
+      <Image source={source} resizeMode="cover" style={styles.photoBackground} />
+      <View style={styles.hadithScrim} />
+      <View style={styles.cardAccent} />
+      <Text style={styles.photoCardEyebrow}>{eyebrow}</Text>
+      <Text style={styles.photoCardTitle}>{title}</Text>
+      {arabic ? <Text style={styles.photoCardArabic}>{arabic}</Text> : null}
+      {transliteration ? <Text style={styles.photoCardTransliteration}>{transliteration}</Text> : null}
+      <Text style={styles.photoCardSummary}>{summary}</Text>
+      {reference ? <Text style={styles.photoCardReference}>{reference}</Text> : null}
+      {disclosure ? <Text style={styles.photoCardDisclosure}>{disclosure}</Text> : null}
+      {action ? (
+        <Pressable accessibilityRole="link" onPress={action.onPress} style={styles.photoCardAction}>
+          <Text style={styles.photoCardReference}>{action.label} ↗</Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
 
   const openArchiveSource = async (url: string) => {
     try {
@@ -380,8 +442,8 @@ export function WorshipHub({ preferences, palette, date, furqanBaseUrl, initialT
       if (Platform.OS === 'web') {
         const background = await photoDataUri(shareScene.source);
         const anchor = document.createElement('a');
-        anchor.href = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(makeShareSvg(selectedHadith, background))}`;
-        anchor.download = `mishkah-hadith-${selectedHadith.id}.svg`;
+        anchor.href = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(makeShareSvg(dailyHadith, background))}`;
+        anchor.download = `mishkah-hadith-${dailyHadith.id}.svg`;
         anchor.click();
         onNotice('Hadith photo card downloaded.');
         return;
@@ -418,8 +480,8 @@ export function WorshipHub({ preferences, palette, date, furqanBaseUrl, initialT
         <>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`Read details for ${selectedHadith.title}`}
-            onPress={() => setHadithDetail(selectedHadith)}
+            accessibilityLabel={`Read details for ${dailyHadith.title}`}
+            onPress={() => setHadithDetail(dailyHadith)}
           >
             <ViewShot ref={cardRef} options={{ format: 'png', quality: 1, result: 'tmpfile' }} style={styles.hadithCard}>
               {Platform.OS === 'web' && resolvedShareScene?.uri ? (
@@ -440,9 +502,9 @@ export function WorshipHub({ preferences, palette, date, furqanBaseUrl, initialT
               <View style={styles.hadithScrim} />
               <View style={styles.cardAccent} />
               <Text style={styles.photoCardEyebrow}>DAILY HADITH SUMMARY</Text>
-              <Text style={styles.photoCardTitle}>{selectedHadith.title}</Text>
-              <Text style={styles.photoCardSummary}>{selectedHadith.summary}</Text>
-              <Text style={styles.photoCardReference}>{selectedHadith.reference}</Text>
+              <Text style={styles.photoCardTitle}>{dailyHadith.title}</Text>
+              <Text style={styles.photoCardSummary}>{dailyHadith.summary}</Text>
+              <Text style={styles.photoCardReference}>{dailyHadith.reference}</Text>
               <Text style={styles.photoCardDisclosure}>Teaching summary, not a verbatim translation · Tap for details</Text>
             </ViewShot>
           </Pressable>
@@ -504,10 +566,33 @@ export function WorshipHub({ preferences, palette, date, furqanBaseUrl, initialT
                   <Text style={styles.listTitle}>{entry.title}</Text>
                   <Text style={styles.listSubtitle}>{entry.reference}</Text>
                 </View>
-                <Text style={styles.listArrow}>{selectedHadith.id === entry.id ? '●' : '›'}</Text>
+                <Text style={styles.listArrow}>{selectedHadithId === entry.id ? '●' : '›'}</Text>
               </Pressable>
             ))}
             {!filteredHadiths.length ? <EmptyState text="No Hadith matches this search." styles={styles} /> : null}
+          </View>
+        </>
+      ) : null}
+
+      {tab === 'Sayings' ? (
+        <>
+          <Text style={styles.bodyText}>A daily selection of Qur’anic reminders and attributed Islamic sayings. Attributions marked “attributed” are reported in later sayings literature.</Text>
+          {renderPhotoSummaryCard({
+            source: SHARE_SCENES.find((scene) => scene.id === 'mountain-valley')?.source ?? SHARE_SCENES[0].source,
+            eyebrow: 'SAYING OF THE DAY',
+            title: `“${dailyQuote.text}”`,
+            summary: dailyQuote.by,
+            reference: `${dailyQuote.source}${dailyQuote.attributed ? ' · attribution is not authenticated' : ''}`,
+            disclosure: 'The same daily saying shown on Mishkah Home.',
+          })}
+          <View style={styles.listGroup}>
+            {ISLAMIC_QUOTES.map((quote) => (
+              <View key={quote.id} style={styles.quoteListCard}>
+                <Text style={styles.quoteListText}>“{quote.text}”</Text>
+                <Text style={styles.quoteListBy}>{quote.by}</Text>
+                <Text style={styles.quoteListSource}>{quote.source}{quote.attributed ? ' · attribution is not authenticated' : ''}</Text>
+              </View>
+            ))}
           </View>
         </>
       ) : null}
@@ -668,6 +753,16 @@ export function WorshipHub({ preferences, palette, date, furqanBaseUrl, initialT
       {tab === 'Duas' ? (
         <>
           <Text style={styles.bodyText}>A searchable Hisn al-Muslim selection for everyday moments.</Text>
+          {renderPhotoSummaryCard({
+            source: SHARE_SCENES.find((scene) => scene.id === 'lakeshore')?.source ?? SHARE_SCENES[0].source,
+            eyebrow: `DU’A OF THE DAY · ${dailyQhd.theme.title.toUpperCase()}`,
+            title: dailyQhd.dua.title,
+            summary: dailyQhd.dua.meaning,
+            arabic: dailyQhd.dua.arabic,
+            transliteration: dailyQhd.dua.transliteration,
+            reference: dailyQhd.dua.reference,
+            disclosure: 'The same daily du’a shown on Mishkah Home.',
+          })}
           <TextInput
             accessibilityLabel="Search supplications"
             onChangeText={setDuaQuery}
@@ -742,6 +837,18 @@ export function WorshipHub({ preferences, palette, date, furqanBaseUrl, initialT
 
       {tab === 'Archives' ? (
         <>
+          {renderPhotoSummaryCard({
+            source: SHARE_SCENES.find((scene) => scene.id === 'forest-sunrise')?.source ?? SHARE_SCENES[0].source,
+            eyebrow: `FROM THE ARCHIVES · ${archiveSpotlight.category.toUpperCase()}`,
+            title: archiveSpotlight.title,
+            summary: archiveSpotlight.summary,
+            reference: archiveSpotlight.sources.map((source) => source.label).join(' · '),
+            disclosure: 'A source-linked archive note, not a substitute for reading the original passage.',
+            action: {
+              label: `Read ${archiveSpotlight.sources[0].label}`,
+              onPress: () => void openArchiveSource(archiveSpotlight.sources[0].url),
+            },
+          })}
           <View style={styles.chipRow}>
             <ChoiceChip
               label="Stories"
@@ -986,9 +1093,12 @@ function createStyles(colors: WorshipPalette) {
     cardAccent: { position: 'absolute', left: 0, top: 17, bottom: 17, width: 3, borderRadius: 2, backgroundColor: colors.gold },
     photoCardEyebrow: { color: '#F3DEAE', fontSize: 9, fontWeight: '700', letterSpacing: 1.2 },
     photoCardTitle: { color: '#FFFFFF', fontSize: 19, fontWeight: '700', marginTop: 12 },
+    photoCardArabic: { color: '#FFFFFF', fontSize: 20, lineHeight: 34, marginTop: 9, textAlign: 'right', writingDirection: 'rtl' },
+    photoCardTransliteration: { color: '#F3DEAE', fontSize: 10, lineHeight: 16, marginTop: 7 },
     photoCardSummary: { color: '#FFFFFF', fontSize: 13, lineHeight: 20, marginTop: 10 },
     photoCardReference: { color: '#F3DEAE', fontSize: 10, lineHeight: 16, marginTop: 11 },
     photoCardDisclosure: { color: '#FFFFFF', opacity: 0.82, fontSize: 9, lineHeight: 14, marginTop: 5 },
+    photoCardAction: { alignSelf: 'flex-start', marginTop: 3 },
     detailDialog: { width: '100%', maxWidth: 440, padding: 20, borderRadius: 20, backgroundColor: colors.surface },
     detailTitle: { color: colors.ink, fontSize: 20, fontWeight: '700', marginTop: 8 },
     detailActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 16 },
@@ -1021,6 +1131,10 @@ function createStyles(colors: WorshipPalette) {
     listTitle: { color: colors.ink, fontSize: 12, fontWeight: '600' },
     listSubtitle: { color: colors.muted, fontSize: 9, marginTop: 4 },
     listArrow: { color: colors.gold, fontSize: 18, paddingHorizontal: 5 },
+    quoteListCard: { paddingVertical: 13, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.line },
+    quoteListText: { color: colors.ink, fontSize: 13, lineHeight: 20 },
+    quoteListBy: { color: colors.accent, fontSize: 11, fontWeight: '700', marginTop: 8 },
+    quoteListSource: { color: colors.muted, fontSize: 9, lineHeight: 15, marginTop: 3 },
     emptyState: { color: colors.muted, fontSize: 12, lineHeight: 18, paddingVertical: 18 },
     counterTopGrid: { flexDirection: 'row', gap: 7, marginTop: 10 },
     counterBottomGrid: { flexDirection: 'row', gap: 8, marginTop: 8 },

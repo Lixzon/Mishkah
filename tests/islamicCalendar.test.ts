@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   getIslamicDate,
+  getRamadanCalendarDates,
   getUpcomingIslamicEvents,
   HIJRI_MONTHS,
 } from '../src/domain/islamicCalendar';
@@ -26,8 +27,24 @@ describe('offline Islamic calendar', () => {
     assert.equal(new Set(first.map((event) => `${event.id}:${event.hijriYear}`)).size, first.length);
   });
 
+  it('derives Ramadan end, Eid al-Fitr, and estimated final-ten-night dates', () => {
+    const ramadanEvent = getUpcomingIslamicEvents('2026-01-01', 6)
+      .find((event) => event.id === 'ramadan');
+    assert.ok(ramadanEvent);
+
+    const dates = getRamadanCalendarDates(ramadanEvent.date);
+    assert.equal(dates.firstFast, ramadanEvent.date);
+    assert.ok(dates.finalHijriDay === 29 || dates.finalHijriDay === 30);
+    assert.equal(dates.finalTenNights.length, 10);
+    assert.deepEqual(dates.oddNights.map(({ hijriDay }) => hijriDay), [21, 23, 25, 27, 29]);
+    assert.equal(getIslamicDate(dates.lastFast).day, dates.finalHijriDay);
+    assert.equal(getIslamicDate(dates.eidAlFitr).month, 10);
+    assert.equal(getIslamicDate(dates.eidAlFitr).day, 1);
+  });
+
   it('rejects invalid limits and malformed input dates', () => {
     assert.throws(() => getIslamicDate('not-a-date'), RangeError);
     assert.throws(() => getUpcomingIslamicEvents('2026-01-01', 0), RangeError);
+    assert.throws(() => getRamadanCalendarDates('2026-01-01'), RangeError);
   });
 });

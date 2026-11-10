@@ -155,7 +155,12 @@ export function getLocalAnswer(query: string): LocalAnswer {
       queryWords.has(word),
     ).length,
   })).sort((left, right) => right.score - left.score);
-  return ranked[0].score > 0 ? ranked[0].faq : FAQS[0];
+  return ranked[0].score > 0
+    ? ranked[0].faq
+    : {
+        title: 'No close offline match',
+        answer: 'I could not find a close answer in the offline guide. Try an offline topic below, or use online search when it is configured.',
+      };
 }
 
 export function getLocalFaqs(): readonly LocalAnswer[] {

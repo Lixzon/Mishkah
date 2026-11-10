@@ -10,7 +10,6 @@
     "expo": "~58.0.23",
     "expo-asset": "~58.0.20",
     "expo-audio": "~58.0.11",
-    "expo-auth-session": "~58.0.17",
     "expo-clipboard": "~58.0.4",
     "expo-constants": "~58.0.14",
     "expo-crypto": "~58.0.7",
@@ -49,7 +48,7 @@
     "web:serve": "npx expo serve",
     "icons": "node scripts/generate-brand-assets.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/prayer.test.ts tests/worship.test.ts tests/qibla.test.ts tests/islamicCalendar.test.ts tests/archives.test.ts tests/rafiq.test.ts tests/stories.test.ts"
+    "test": "tsx --test tests/prayer.test.ts tests/worship.test.ts tests/qibla.test.ts tests/islamicCalendar.test.ts tests/archives.test.ts tests/rafiq.test.ts tests/stories.test.ts tests/dailyQhdReminder.test.ts"
   },
   "private": true
 }

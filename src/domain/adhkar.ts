@@ -125,7 +125,7 @@ export const EVENING_ADHKAR: readonly AdhkarEntry[] = MORNING_ADHKAR.map((entry)
 });
 
 export interface DuaEntry extends AdhkarEntry {
-  category: 'travel' | 'anxiety' | 'sleep' | 'morning' | 'home' | 'food' | 'forgiveness';
+  category: 'travel' | 'anxiety' | 'sleep' | 'morning' | 'home' | 'food' | 'forgiveness' | 'mercy' | 'salah' | 'charity' | 'character' | 'provision';
   context: string;
 }
 
@@ -180,6 +180,36 @@ export const HISN_AL_MUSLIM_DUAS: readonly DuaEntry[] = [
     arabic: 'اللَّهُمَّ بِكَ أَصْبَحْنَا، وَبِكَ أَمْسَيْنَا، وَبِكَ نَحْيَا، وَبِكَ نَمُوتُ، وَإِلَيْكَ النُّشُورُ',
     transliteration: 'Allahumma bika asbahna, wa bika amsayna, wa bika nahya, wa bika namut, wa ilayka-n-nushur.',
     meaning: 'By You we enter the morning and evening, live and die, and to You is the resurrection.', count: 1, reference: 'Abu Dawud 5068; Jami‘ at-Tirmidhi 3391',
+  },
+  {
+    id: 'dua-mercy', category: 'mercy', context: 'mercy pardon forgive our sins', title: 'Asking for pardon and mercy',
+    arabic: 'رَبَّنَا لَا تُؤَاخِذْنَا إِن نَّسِينَا أَوْ أَخْطَأْنَا ۚ رَبَّنَا وَلَا تَحْمِلْ عَلَيْنَا إِصْرًا كَمَا حَمَلْتَهُ عَلَى الَّذِينَ مِن قَبْلِنَا ۚ رَبَّنَا وَلَا تُحَمِّلْنَا مَا لَا طَاقَةَ لَنَا بِهِ ۖ وَاعْفُ عَنَّا وَاغْفِرْ لَنَا وَارْحَمْنَا',
+    transliteration: 'Rabbana la tu’akhidhna in nasina aw akhta’na. Rabbana wa la tahmil ‘alayna isran kama hamaltahu ‘ala-lladhina min qablina. Rabbana wa la tuhammilna ma la taqata lana bih. Wa‘fu ‘anna, waghfir lana, warhamna.',
+    meaning: 'Our Lord, do not hold us accountable if we forget or err. Pardon us, forgive us, and have mercy on us.', count: 1, reference: 'Qur’an 2:286',
+  },
+  {
+    id: 'dua-salah', category: 'salah', context: 'prayer establish salah descendants', title: 'Asking to establish prayer',
+    arabic: 'رَبِّ اجْعَلْنِي مُقِيمَ الصَّلَاةِ وَمِن ذُرِّيَّتِي ۚ رَبَّنَا وَتَقَبَّلْ دُعَاءِ',
+    transliteration: 'Rabbi-j‘alni muqima-s-salati wa min dhurriyyati, Rabbana wa taqabbal du‘a.',
+    meaning: 'My Lord, make me an establisher of prayer, and also from my descendants. Our Lord, accept my supplication.', count: 1, reference: 'Qur’an 14:40',
+  },
+  {
+    id: 'dua-charity', category: 'charity', context: 'charity good deeds acceptance', title: 'Asking Allah to accept good deeds',
+    arabic: 'رَبَّنَا تَقَبَّلْ مِنَّا ۖ إِنَّكَ أَنتَ السَّمِيعُ الْعَلِيمُ',
+    transliteration: 'Rabbana taqabbal minna, innaka anta-s-sami‘u-l-‘alim.',
+    meaning: 'Our Lord, accept this from us. You are the All-Hearing, the All-Knowing.', count: 1, reference: 'Qur’an 2:127',
+  },
+  {
+    id: 'dua-character', category: 'character', context: 'character manners conduct goodness', title: 'Asking for the best character',
+    arabic: 'اللَّهُمَّ اهْدِنِي لِأَحْسَنِ الْأَخْلَاقِ، لَا يَهْدِي لِأَحْسَنِهَا إِلَّا أَنْتَ، وَاصْرِفْ عَنِّي سَيِّئَهَا، لَا يَصْرِفُ عَنِّي سَيِّئَهَا إِلَّا أَنْتَ',
+    transliteration: 'Allahumma ihdini li-ahsani-l-akhlaq, la yahdi li-ahsaniha illa anta, wasrif ‘anni sayyi’aha, la yasrifu ‘anni sayyi’aha illa anta.',
+    meaning: 'O Allah, guide me to the best character; none guides to it but You. Turn bad character away from me; none can turn it away but You.', count: 1, reference: 'Sahih Muslim 771',
+  },
+  {
+    id: 'dua-provision', category: 'provision', context: 'provision sustenance goodness need', title: 'Asking Allah for good provision',
+    arabic: 'رَبِّ إِنِّي لِمَا أَنْزَلْتَ إِلَيَّ مِنْ خَيْرٍ فَقِيرٌ',
+    transliteration: 'Rabbi inni lima anzalta ilayya min khayrin faqir.',
+    meaning: 'My Lord, I am truly in need of whatever good You send down to me.', count: 1, reference: 'Qur’an 28:24',
   },
 ];
 

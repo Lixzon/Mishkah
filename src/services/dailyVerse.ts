@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import { getDailyQhdTheme } from '../domain/dailyQhdReminder';
 
 export interface DailyVerse {
   dateKey: string;
@@ -27,6 +28,7 @@ interface SurahPayload {
 
 const STORAGE_PREFIX = 'mishkah.quran.daily-verse.v1';
 const TOTAL_AYAH_COUNT = 6236;
+const DEFAULT_FURQAN_BASE_URL = 'https://furqan-quran-app.vercel.app';
 
 function localDateKey(date: Date): string {
   return [
@@ -37,12 +39,7 @@ function localDateKey(date: Date): string {
 }
 
 function globalAyahForDate(date: Date): number {
-  const dayOfYear = Math.floor(
-    (Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) -
-      Date.UTC(date.getFullYear(), 0, 1)) /
-      86_400_000,
-  );
-  return (dayOfYear % TOTAL_AYAH_COUNT) + 1;
+  return getDailyQhdTheme(date).globalAyah;
 }
 
 function globalAyahForDateKey(dateKey: string): number {
@@ -132,7 +129,8 @@ export async function getDailyVerse(
     if (cached && (requestedAyah === null || cached.globalAyah === requestedAyah)) return cached;
   }
 
-  const baseUrl = String(Constants.expoConfig?.extra?.furqanBaseUrl ?? '').trim();
+  const baseUrl = String(Constants.expoConfig?.extra?.furqanBaseUrl ?? '').trim()
+    || DEFAULT_FURQAN_BASE_URL;
   if (!baseUrl) throw new Error('The Furqan Quran source is not configured for this build.');
   const root = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
   const metadataValue = await fetchJson(new URL('data/meta/surahs.json', root).toString());
