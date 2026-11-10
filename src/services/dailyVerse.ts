@@ -30,12 +30,8 @@ const STORAGE_PREFIX = 'mishkah.quran.daily-verse.v1';
 const TOTAL_AYAH_COUNT = 6236;
 const DEFAULT_FURQAN_BASE_URL = 'https://furqan-quran-app.vercel.app';
 
-function localDateKey(date: Date): string {
-  return [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, '0'),
-    String(date.getDate()).padStart(2, '0'),
-  ].join('-');
+function utcDateKey(date: Date): string {
+  return date.toISOString().slice(0, 10);
 }
 
 function globalAyahForDate(date: Date): number {
@@ -44,7 +40,7 @@ function globalAyahForDate(date: Date): number {
 
 function globalAyahForDateKey(dateKey: string): number {
   const [year, month, day] = dateKey.split('-').map(Number);
-  return globalAyahForDate(new Date(year, month - 1, day, 12));
+  return globalAyahForDate(new Date(Date.UTC(year, month - 1, day, 12)));
 }
 
 function isSurahMetadata(value: unknown): value is SurahMetadata {
@@ -116,7 +112,7 @@ export async function getDailyVerse(
   forceRefresh = false,
   pairedGlobalAyah: number | null = null,
 ): Promise<DailyVerse> {
-  const dateKey = localDateKey(date);
+  const dateKey = utcDateKey(date);
   const storageKey = `${STORAGE_PREFIX}:${dateKey}`;
   const requestedAyah = pairedGlobalAyah !== null &&
     Number.isInteger(pairedGlobalAyah) &&

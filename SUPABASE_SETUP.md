@@ -28,6 +28,8 @@ Without these environment variables, migrations, and the Email provider, pairing
 - Reads `quran.daily-highlight:<date>` so the verse of the day matches Furqan exactly.
 - Writes `mishkah.engagement` with its own streak and unlocked features when paired.
 
+The daily verse uses a UTC date key so the paired apps show the same verse even when devices are in different time zones. Furqan publishes the shared verse record, and both apps refresh paired data automatically.
+
 The pairing code is stored in SecureStore on native and in AsyncStorage on web. **Disconnect this device** removes the code locally while other devices remain paired. **Revoke pairing everywhere** invalidates the code and deletes shared cloud records; each device keeps its local data and can pair again with a new code.
 
 Any number of trusted app installations can use the same code. Each new code creates an isolated sync space, so different codes do not mix data. Treat each code like a password.

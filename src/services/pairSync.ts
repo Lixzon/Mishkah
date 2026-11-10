@@ -11,12 +11,8 @@ export interface PairedHighlight {
 const HIGHLIGHT_KEY = 'mishkah.quran.paired-highlight.v1';
 const TOTAL_AYAH_COUNT = 6236;
 
-function localDateKey(date: Date): string {
-  return [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, '0'),
-    String(date.getDate()).padStart(2, '0'),
-  ].join('-');
+function utcDateKey(date: Date): string {
+  return date.toISOString().slice(0, 10);
 }
 
 function isGlobalAyah(value: unknown): value is number {
@@ -45,7 +41,7 @@ async function readCachedHighlight(dateKey: string): Promise<number | null> {
 }
 
 export async function readPairedHighlight(date = new Date()): Promise<number | null> {
-  return readCachedHighlight(localDateKey(date));
+  return readCachedHighlight(utcDateKey(date));
 }
 
 /**
@@ -56,7 +52,7 @@ export async function readPairedHighlight(date = new Date()): Promise<number | n
 export async function syncPairedData(
   date = new Date(),
 ): Promise<{ state: SyncState; globalAyah: number | null }> {
-  const dateKey = localDateKey(date);
+  const dateKey = utcDateKey(date);
   const current = await readSyncState();
   const pairCode = await getSavedPairCode();
   if (!pairCode || !isSupabaseSyncConfigured()) {
