@@ -41,8 +41,16 @@ const CITY_INDEX: readonly CityRow[] = [
   ['cape-town', 'Cape Town', 'South Africa', -33.9249, 18.4241, 'Africa/Johannesburg'],
 ];
 
-export const DEFAULT_CITY_IDS = ['makkah', 'london', 'jakarta'] as const;
+export const DEFAULT_CITY_ID = 'lagos';
+export const DEFAULT_CITY_IDS = [DEFAULT_CITY_ID] as const;
 export const MAX_PINNED_CITIES = 5;
+
+export function normalizePinnedCityIds(cityIds: readonly string[]): string[] {
+  const additionalCityIds = [...new Set(cityIds)].filter(
+    (id) => id !== DEFAULT_CITY_ID && getCity(id) !== undefined,
+  );
+  return [DEFAULT_CITY_ID, ...additionalCityIds].slice(0, MAX_PINNED_CITIES);
+}
 
 export function getCity(id: string): City | undefined {
   const row = CITY_INDEX.find(([cityId]) => cityId === id);
@@ -78,15 +86,17 @@ export type PinResult =
   | { status: 'capacity-reached'; cityIds: string[] };
 
 export function pinCity(cityIds: readonly string[], cityId: string): PinResult {
-  if (cityIds.includes(cityId)) {
-    return { status: 'already-pinned', cityIds: [...cityIds] };
+  const normalizedCityIds = normalizePinnedCityIds(cityIds);
+  if (normalizedCityIds.includes(cityId)) {
+    return { status: 'already-pinned', cityIds: normalizedCityIds };
   }
-  if (cityIds.length >= MAX_PINNED_CITIES) {
-    return { status: 'capacity-reached', cityIds: [...cityIds] };
+  if (normalizedCityIds.length >= MAX_PINNED_CITIES) {
+    return { status: 'capacity-reached', cityIds: normalizedCityIds };
   }
-  return { status: 'added', cityIds: [...cityIds, cityId] };
+  return { status: 'added', cityIds: [...normalizedCityIds, cityId] };
 }
 
 export function unpinCity(cityIds: readonly string[], cityId: string): string[] {
-  return cityIds.filter((id) => id !== cityId);
+  if (cityId === DEFAULT_CITY_ID) return normalizePinnedCityIds(cityIds);
+  return normalizePinnedCityIds(cityIds.filter((id) => id !== cityId));
 }

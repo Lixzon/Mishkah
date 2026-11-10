@@ -186,6 +186,10 @@ export function localMinuteAt(date: Date, timeZone: string): number {
   return hour * 60 + minute;
 }
 
+export function prayerTimeHasArrived(prayerMinute: number, now: Date, timeZone: string): boolean {
+  return localMinuteAt(now, timeZone) >= prayerMinute;
+}
+
 export function formatPrayerTime(minute: number, city: City, localDate: string): string {
   const instant = prayerTimeInstant(city, localDate, minute);
   return new Intl.DateTimeFormat(undefined, {

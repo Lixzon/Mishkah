@@ -25,6 +25,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getLocalAnswer, getLocalFaqs } from './src/domain/assistant';
+  DEFAULT_CITY_ID,
 import {
   getCity,
   MAX_PINNED_CITIES,
@@ -39,6 +40,7 @@ import {
   formatPrayerTime,
   getPrayerTimes,
   localMinuteAt,
+  prayerTimeHasArrived,
   nextPrayerAt,
   isValidJumuahTime,
   type PrayerName,
@@ -373,6 +375,7 @@ export default function App() {
       readLastSystemReport().then((next) => {
         if (active) setSystemReport(next);
       }),
+  const [prayerCelebrationVisible, setPrayerCelebrationVisible] = useState(false);
     ])
       .catch((error: unknown) => {
         if (active) {
@@ -612,15 +615,15 @@ export default function App() {
     changePreferences((current) => ({
       ...current,
       pinnedCityIds: result.cityIds,
-      selectedCityId: selectedCity.id,
+      selectedCityId: result.status === 'added' ? current.selectedCityId : selectedCity.id,
     }));
-    setScreen('Prayer');
+    if (result.status !== 'added') setScreen('Prayer');
     setCityQuery('');
   };
 
   const removeCity = (cityId: string) => {
-    if (preferencesRef.current.pinnedCityIds.length === 1) {
-      setNotice('Keep at least one pinned city to see a prayer schedule.');
+    if (cityId === DEFAULT_CITY_ID) {
+      setNotice('Nigeria is the fixed first place and cannot be removed.');
       return;
     }
     changePreferences((current) => {
@@ -1079,6 +1082,14 @@ export default function App() {
     try {
       const locale = Platform.OS === 'web' && typeof navigator !== 'undefined'
         ? navigator.language
+    const checklistPrayerTime =
+      prayerName === 'Dhuhr' && isFridayInCity && jumuahMinute !== undefined
+        ? jumuahMinute
+        : prayerTimes[prayerName];
+    if (!alreadyCompleted && !prayerTimeHasArrived(checklistPrayerTime, now, city.timeZone)) {
+      setNotice(`${prayerName} can be marked after its scheduled time.`);
+      return;
+    }
         : 'en';
       setGuideOnlineAnswer(await searchRafiqOnline(rafiqApiUrl, cleanQuery, locale));
     } catch (error) {
@@ -1097,6 +1108,13 @@ export default function App() {
       ? 'Community'
       : opensStories
         ? 'Worship'
+
+    if (
+      !alreadyCompleted &&
+      OBLIGATORY_PRAYERS.every((name) => completedPrayers.includes(name))
+    ) {
+      setPrayerCelebrationVisible(true);
+    }
       : /qibla|qiblah|at.?tibb|remedy|health|wellness/.test(normalized)
         ? 'Guide'
         : /hadith|dua|du'a|adhkar|tasbeeh|tasbih|library|archive/.test(normalized)
@@ -1410,37 +1428,50 @@ export default function App() {
                   const isObligatory = prayerName !== 'Sunrise';
                   const prayerCompleted = isObligatory && completedPrayers.includes(prayerName);
                   return (
-                    <View
-                      key={prayerName}
-                      style={[
-                        styles.prayerRow,
-                        index === PRAYER_ORDER.length - 1 && styles.lastPrayerRow,
-                      ]}
-                    >
-                      <View style={styles.prayerNameGroup}>
-                        <View style={[styles.prayerDot, isNextPrayer && styles.activePrayerDot]} />
-                        <Text style={[styles.prayerName, isNextPrayer && styles.activePrayerName]}>
-                          {prayerName}
-                        </Text>
-                        {isNextPrayer ? <Text style={styles.nextTag}>NEXT</Text> : null}
-                      </View>
-                      <View style={styles.prayerRowRight}>
-                        <Text style={[styles.prayerTime, isNextPrayer && styles.activePrayerName]}>
-                          {formatPrayerTime(prayerTimes[prayerName], city, localDate)}
-                        </Text>
-                        {isObligatory ? (
-                          <Pressable
-                            accessibilityRole="checkbox"
-                            accessibilityLabel={`${prayerName} prayer completed`}
-                            accessibilityState={{ checked: prayerCompleted }}
-                            onPress={() => togglePrayer(prayerName)}
-                            style={[styles.prayerCheckButton, prayerCompleted && styles.prayerCheckButtonDone]}
-                          >
-                            <Text style={[styles.prayerCheckText, prayerCompleted && styles.prayerCheckTextDone]}>
-                              {prayerCompleted ? '✓' : '○'}
-                            </Text>
-                          </Pressable>
-                        ) : null}
+                    <View key={prayerName}>
+                      <View
+                        style={[
+                          styles.prayerRow,
+                          index === PRAYER_ORDER.length - 1 && !isFridayInCity && styles.lastPrayerRow,
+                        ]}
+                      >
+                        <View style={styles.prayerNameGroup}>
+                          <View style={[styles.prayerDot, isNextPrayer && styles.activePrayerDot]} />
+                          <Text style={[styles.prayerName, isNextPrayer && styles.activePrayerName]}>
+                            {prayerName}
+                          </Text>
+                          {isNextPrayer ? <Text style={styles.nextTag}>NEXT</Text> : null}
+                        </View>
+                        <View style={styles.prayerRowRight}>
+                          <Text style={[styles.prayerTime, isNextPrayer && styles.activePrayerName]}>
+                            {formatPrayerTime(prayerTimes[prayerName], city, localDate)}
+                          </Text>
+                          {isObligatory ? (
+                            <Pressable
+                              accessibilityRole="checkbox"
+                              accessibilityLabel={
+                                prayerCompleted
+                                  ? `${prayerName} prayer completed`
+                                  : `${prayerName} prayer${prayerTimeReached ? '' : ' locked until its scheduled time'}`
+                              }
+                              accessibilityState={{
+                                checked: prayerCompleted,
+                                disabled: !prayerCompleted && !prayerTimeReached,
+                              }}
+                              disabled={!prayerCompleted && !prayerTimeReached}
+                              onPress={() => togglePrayer(prayerName)}
+                              style={[
+                                styles.prayerCheckButton,
+                                prayerCompleted && styles.prayerCheckButtonDone,
+                                !prayerCompleted && !prayerTimeReached && styles.prayerCheckButtonDisabled,
+                              ]}
+                            >
+                              <Text style={[styles.prayerCheckText, prayerCompleted && styles.prayerCheckTextDone]}>
+                                {prayerCompleted ? '✓' : '○'}
+                              </Text>
+                            </Pressable>
+                          ) : null}
+                        </View>
                       </View>
                     </View>
                   );
@@ -1583,10 +1614,10 @@ export default function App() {
           {screen === 'Global' ? (
             <>
               <View style={styles.introBlock}>
-                <Text style={styles.eyebrow}>YOUR FIVE-SLOT HUB</Text>
+                <Text style={styles.eyebrow}>NIGERIA + FOUR PLACES</Text>
                 <Text style={styles.pageTitle}>A little closer, everywhere.</Text>
                 <Text style={styles.bodyText}>
-                  Prayer times are worked out only when you open a place. Your saved cities stay on this device.
+                  Nigeria stays as your first place. Add up to four more cities to compare local prayer times; the additional places stay on this device.
                 </Text>
               </View>
               <View style={styles.searchBox}>
@@ -1725,6 +1756,12 @@ export default function App() {
                         preferences.alarmLeadMinutes === minutes && styles.selectedLeadChoice,
                       ]}
                     >
+                  const checklistPrayerTime =
+                    prayerName === 'Dhuhr' && isFridayInCity && jumuahMinute !== undefined
+                      ? jumuahMinute
+                      : prayerTimes[prayerName];
+                  const prayerTimeReached =
+                    isObligatory && prayerTimeHasArrived(checklistPrayerTime, now, city.timeZone);
                       <Text
                         style={[
                           styles.leadChoiceText,
@@ -2876,6 +2913,31 @@ function ActionButton({
   disabled = false,
   busy = false,
   danger = false,
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setPrayerCelebrationVisible(false)}
+        transparent
+        visible={prayerCelebrationVisible}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalIcon}>
+              <Text style={styles.modalIconText}>✦</Text>
+            </View>
+            <Text style={styles.modalTitle}>Hooray — you did it!</Text>
+            <Text style={styles.modalMessage}>
+              You marked all five daily prayers. May Allah bless your effort, accept your prayers, and keep you steadfast. May He reward you for this good deed.
+            </Text>
+            <ActionButton
+              label="Hooray!"
+              onPress={() => setPrayerCelebrationVisible(false)}
+              palette={palette}
+              styles={styles}
+            />
+          </View>
+        </View>
+      </Modal>
+
 }: {
   label: string;
   onPress: () => void;
@@ -3288,6 +3350,7 @@ function createStyles(colors: Palette) {
     },
     removeCityText: { color: colors.muted, fontSize: 20, lineHeight: 21 },
     helperText: { color: colors.muted, fontSize: 10, lineHeight: 16, marginTop: 9 },
+    prayerCheckButtonDisabled: { opacity: 0.4 },
     routineCard: { borderRadius: 21, padding: 18, backgroundColor: colors.surface, marginBottom: 13 },
     routineIcon: {
       width: 38,

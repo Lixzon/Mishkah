@@ -1,13 +1,22 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { getLocalAnswer } from '../src/domain/assistant';
-import { getCity, pinCity, searchCities, unpinCity } from '../src/domain/cities';
+import {
+  DEFAULT_CITY_ID,
+  DEFAULT_CITY_IDS,
+  getCity,
+  normalizePinnedCityIds,
+  pinCity,
+  searchCities,
+  unpinCity,
+} from '../src/domain/cities';
 import {
   dateInTimeZone,
   getPrayerTimesForDate,
   isValidJumuahTime,
   localMinuteAt,
   nextPrayerAt,
+  prayerTimeHasArrived,
   prayerTimeInstant,
   timeZoneOffsetAt,
 } from '../src/domain/prayer';
@@ -42,6 +51,15 @@ describe('offline prayer calculations', () => {
     const event = prayerTimeInstant(city, localDate, 13 * 60 + 15);
     assert.equal(dateInTimeZone(event, city.timeZone), localDate);
     assert.equal(localMinuteAt(event, city.timeZone), 13 * 60 + 15);
+  });
+
+  it('only unlocks a prayer checklist item once its local prayer time has arrived', () => {
+    const beforePrayer = new Date('2026-03-20T05:59:00.000Z');
+    const atPrayer = new Date('2026-03-20T06:00:00.000Z');
+
+    assert.equal(prayerTimeHasArrived(360, beforePrayer, 'Europe/London'), false);
+    assert.equal(prayerTimeHasArrived(360, atPrayer, 'Europe/London'), true);
+    assert.equal(prayerTimeHasArrived(1445, atPrayer, 'Europe/London'), false);
   });
 
   it('preserves next-day prayer times during the midnight sun', () => {
@@ -104,6 +122,16 @@ describe('local Jumu\'ah time input', () => {
 });
 
 describe('lazy city registry and pinned slots', () => {
+  it('keeps Nigeria as the fixed first place and reserves four optional slots', () => {
+    assert.equal(DEFAULT_CITY_ID, 'lagos');
+    assert.deepEqual(DEFAULT_CITY_IDS, ['lagos']);
+    assert.deepEqual(normalizePinnedCityIds(['makkah', 'lagos', 'london']), ['lagos', 'makkah', 'london']);
+    assert.deepEqual(unpinCity(['lagos', 'makkah'], 'lagos'), ['lagos', 'makkah']);
+    assert.deepEqual(unpinCity(['lagos', 'makkah'], 'makkah'), ['lagos']);
+    const added = pinCity(['lagos'], 'cairo');
+    assert.deepEqual(added, { status: 'added', cityIds: ['lagos', 'cairo'] });
+  });
+
   it('looks up and searches the compressed city index on demand', () => {
     assert.equal(getCity('kuala-lumpur')?.timeZone, 'Asia/Kuala_Lumpur');
     assert.equal(searchCities('ghana')[0]?.id, 'accra');
@@ -111,7 +139,7 @@ describe('lazy city registry and pinned slots', () => {
   });
 
   it('enforces the five-city capacity without changing existing pins', () => {
-    const fourPins = ['makkah', 'london', 'jakarta', 'cairo'];
+    const fourPins = ['lagos', 'london', 'jakarta', 'cairo'];
     const fifth = pinCity(fourPins, 'paris');
     assert.equal(fifth.status, 'added');
     if (fifth.status !== 'added') {
@@ -122,7 +150,7 @@ describe('lazy city registry and pinned slots', () => {
     assert.equal(overflow.status, 'capacity-reached');
     assert.deepEqual(overflow.cityIds, fifth.cityIds);
     assert.deepEqual(unpinCity(overflow.cityIds, 'cairo'), [
-      'makkah',
+      'lagos',
       'london',
       'jakarta',
       'paris',
@@ -130,9 +158,9 @@ describe('lazy city registry and pinned slots', () => {
   });
 
   it('does not duplicate a pinned city', () => {
-    const result = pinCity(['makkah', 'london'], 'makkah');
+    const result = pinCity(['lagos', 'london'], 'london');
     assert.equal(result.status, 'already-pinned');
-    assert.deepEqual(result.cityIds, ['makkah', 'london']);
+    assert.deepEqual(result.cityIds, ['lagos', 'london']);
   });
 });
 

@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { DEFAULT_CITY_IDS, MAX_PINNED_CITIES, getCity } from '../domain/cities';
+import { DEFAULT_CITY_IDS, normalizePinnedCityIds, getCity } from '../domain/cities';
 import { isValidJumuahTime, type CalculationMethod, type PrayerName } from '../domain/prayer';
 import type { CustomDhikr } from '../domain/tasbeeh';
 
@@ -107,12 +107,11 @@ export function normalizeAppPreferences(value: unknown): AppPreferences {
   }
 
   const input = value as Partial<AppPreferences>;
-  const pinnedCityIds = Array.isArray(input.pinnedCityIds)
-    ? [...new Set(input.pinnedCityIds.filter((id): id is string => typeof id === 'string'))].slice(
-        0,
-        MAX_PINNED_CITIES,
-      )
-    : [...DEFAULT_PREFERENCES.pinnedCityIds];
+  const pinnedCityIds = normalizePinnedCityIds(
+    Array.isArray(input.pinnedCityIds)
+      ? input.pinnedCityIds.filter((id): id is string => typeof id === 'string')
+      : DEFAULT_PREFERENCES.pinnedCityIds,
+  );
   const selectedCityId =
     typeof input.selectedCityId === 'string' && pinnedCityIds.includes(input.selectedCityId)
       ? input.selectedCityId
