@@ -28,7 +28,7 @@ interface SurahPayload {
 
 const STORAGE_PREFIX = 'mishkah.quran.daily-verse.v1';
 const TOTAL_AYAH_COUNT = 6236;
-const DEFAULT_FURQAN_BASE_URL = 'https://furqan-quran-app.vercel.app';
+const DEFAULT_MANARA_BASE_URL = 'https://manara.app';
 
 function utcDateKey(date: Date): string {
   return date.toISOString().slice(0, 10);
@@ -110,44 +110,37 @@ async function fetchJson(url: string): Promise<unknown> {
 export async function getDailyVerse(
   date = new Date(),
   forceRefresh = false,
-  pairedGlobalAyah: number | null = null,
 ): Promise<DailyVerse> {
   const dateKey = utcDateKey(date);
   const storageKey = `${STORAGE_PREFIX}:${dateKey}`;
-  const requestedAyah = pairedGlobalAyah !== null &&
-    Number.isInteger(pairedGlobalAyah) &&
-    pairedGlobalAyah >= 1 &&
-    pairedGlobalAyah <= TOTAL_AYAH_COUNT
-    ? pairedGlobalAyah
-    : null;
   if (!forceRefresh) {
     const cached = cachedVerse(await AsyncStorage.getItem(storageKey), dateKey);
-    if (cached && (requestedAyah === null || cached.globalAyah === requestedAyah)) return cached;
+    if (cached) return cached;
   }
 
-  const baseUrl = String(Constants.expoConfig?.extra?.furqanBaseUrl ?? '').trim()
-    || DEFAULT_FURQAN_BASE_URL;
-  if (!baseUrl) throw new Error('The Furqan Quran source is not configured for this build.');
+  const baseUrl = String(Constants.expoConfig?.extra?.manaraBaseUrl ?? '').trim()
+    || DEFAULT_MANARA_BASE_URL;
+  if (!baseUrl) throw new Error('The Manāra Quran source is not configured for this build.');
   const root = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
   const metadataValue = await fetchJson(new URL('data/meta/surahs.json', root).toString());
   if (!Array.isArray(metadataValue) || !metadataValue.every(isSurahMetadata)) {
-    throw new Error('Furqan returned invalid surah metadata.');
+    throw new Error('Manāra returned invalid surah metadata.');
   }
 
-  const globalAyah = requestedAyah ?? globalAyahForDate(date);
+  const globalAyah = globalAyahForDate(date);
   let cumulativeAyahs = 0;
   const selectedSurah = metadataValue.find((surah) => {
     cumulativeAyahs += surah.numberOfAyahs;
     return cumulativeAyahs >= globalAyah;
   });
-  if (!selectedSurah) throw new Error('Furqan could not match today’s verse to a surah.');
+  if (!selectedSurah) throw new Error('Manāra could not match today’s verse to a surah.');
   const ayahNumber = selectedSurah.numberOfAyahs - (cumulativeAyahs - globalAyah);
   const payloadValue = await fetchJson(
     new URL(`data/surah/${selectedSurah.number}.json`, root).toString(),
   );
-  if (!isSurahPayload(payloadValue)) throw new Error('Furqan returned invalid Quran text.');
+  if (!isSurahPayload(payloadValue)) throw new Error('Manāra returned invalid Quran text.');
   const ayah = payloadValue.ayahs[ayahNumber - 1];
-  if (!ayah || ayah.i !== ayahNumber) throw new Error('Furqan did not return the selected verse.');
+  if (!ayah || ayah.i !== ayahNumber) throw new Error('Manāra did not return the selected verse.');
 
   const result: DailyVerse = {
     dateKey,

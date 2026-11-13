@@ -74,39 +74,9 @@ import { resetPostSalahCounts } from './src/domain/tasbeeh';
 import { getDailyVerse, type DailyVerse } from './src/services/dailyVerse';
 import { searchRafiqOnline, type RafiqOnlineAnswer } from './src/services/rafiq';
 import {
-  createPairCode,
-  forgetPairCode,
-  getCloudUserEmail,
-  getSavedPairCode,
-  isPairingCodeRevokedError,
-  isSupabaseSyncConfigured,
-  joinPairCode,
-  readCloudBackup,
-  requestEmailCode,
-  revokePairCode,
-  signOutCloudAccount,
-  verifyEmailCode,
-  writeCloudBackup,
-} from './src/services/cloudSync';
-import {
-  createMishkahCloudBackup,
-  enableAutomaticCloudBackup,
-  isAutomaticCloudBackupEnabled,
-  restoreMishkahCloudBackup,
-} from './src/services/cloudBackup';
-import {
-  flushSyncQueue,
-  isCrossDeviceSyncConfigured,
-  linkPairedAccount,
   readSyncState,
-  unlinkPairedAccount,
   type SyncState,
 } from './src/services/syncEngine';
-import {
-  readPairedHighlight,
-  syncPairedData,
-  type PairedQuranProgress,
-} from './src/services/pairSync';
 import {
   createSystemReport,
   discardStoredSystemReport,
@@ -443,33 +413,12 @@ export default function App() {
   const [systemReport, setSystemReport] = useState<SystemReport | null>(null);
   const [reportBusy, setReportBusy] = useState(false);
   const [syncState, setSyncState] = useState<SyncState | null>(null);
-  const [pairedQuranProgress, setPairedQuranProgress] = useState<PairedQuranProgress>({
-    lastPosition: null,
-    bookmarks: [],
-    memorizedAyahs: [],
-  });
-  const [pairCode, setPairCode] = useState<string | null>(null);
-  const [pairEntry, setPairEntry] = useState('');
-  const [pairMessage, setPairMessage] = useState('');
-  const [pairBusy, setPairBusy] = useState(false);
-  const [revokeConfirmVisible, setRevokeConfirmVisible] = useState(false);
-  const [backupEmail, setBackupEmail] = useState('');
-  const [backupCode, setBackupCode] = useState('');
-  const [backupCodeSent, setBackupCodeSent] = useState(false);
-  const [accountEmail, setAccountEmail] = useState<string | null>(null);
-  const [cloudBackupExists, setCloudBackupExists] = useState(false);
-  const [cloudBackupUpdatedAt, setCloudBackupUpdatedAt] = useState<string | null>(null);
-  const [cloudBackupReady, setCloudBackupReady] = useState(false);
-  const [backupBusy, setBackupBusy] = useState(false);
-  const [backupMessage, setBackupMessage] = useState('');
   const [dailyVerse, setDailyVerse] = useState<DailyVerse | null>(null);
   const [dailyVerseError, setDailyVerseError] = useState('');
   const [refreshingHome, setRefreshingHome] = useState(false);
   const [homePhotoIndex, setHomePhotoIndex] = useState(initialHomePhotoIndex);
   const [journeyStory, setJourneyStory] = useState<(typeof STORIES)[number] | null>(null);
   const rafiqApiUrl = String(Constants.expoConfig?.extra?.rafiqApiUrl ?? '').trim();
-  const syncConfigured = isCrossDeviceSyncConfigured();
-  const supabaseConfigured = isSupabaseSyncConfigured();
 
   const theme = preferences.theme;
   const palette = PALETTES[theme];
@@ -490,9 +439,6 @@ export default function App() {
           preferencesRef.current = loadedPreferences;
           setPreferences(loadedPreferences);
         }
-      }),
-      getSavedPairCode().then((code) => {
-        if (active) setPairCode(code);
       }),
       readSyncState().then((next) => {
         if (active) setSyncState(next);
@@ -608,8 +554,6 @@ export default function App() {
   const weeklySurah = WEEKLY_SURAH_SPOTLIGHTS[weeklySpotlightIndex(now)];
   const quoteOfTheDay = getQuoteOfTheDay(now);
   const dailyJourney = getDailyQuranJourney(now);
-  const memorizedAyahs = pairedQuranProgress.memorizedAyahs.filter((item) => item.memorized);
-  const lastFurqanPosition = pairedQuranProgress.lastPosition;
   const isHomeScreen = screen === 'Prayer';
   const furqanBaseUrl = String(Constants.expoConfig?.extra?.furqanBaseUrl ?? '')
     .trim()
@@ -650,8 +594,7 @@ export default function App() {
 
   const refreshDailyVerse = useCallback(async (forceRefresh = false) => {
     try {
-      const pairedAyah = await readPairedHighlight(new Date());
-      setDailyVerse(await getDailyVerse(new Date(), forceRefresh, pairedAyah));
+      setDailyVerse(await getDailyVerse(new Date(), forceRefresh));
       setDailyVerseError('');
     } catch (error) {
       setDailyVerseError(friendlyError(error, 'The verse of the day could not be loaded.'));
@@ -674,50 +617,10 @@ export default function App() {
     }
   }, [homePhotoIndex]);
 
-  const handlePairingFailure = useCallback(async (error: unknown, fallback: string) => {
-    if (isPairingCodeRevokedError(error)) {
-      try {
-        await forgetPairCode();
-        const next = await unlinkPairedAccount();
-        setPairCode(null);
-        setSyncState(next);
-        setPairMessage('This pairing was revoked on another device. Shared cloud records were deleted; local data remains.');
-      } catch (cleanupError) {
-        setPairMessage(`The pairing was revoked, but this device could not clear its saved code: ${friendlyError(cleanupError, 'local storage is unavailable')}`);
-      }
-      return;
-    }
-    setPairMessage(`Paired sync could not refresh: ${friendlyError(error, fallback)}`);
-  }, []);
-
   useEffect(() => {
     if (isReady) void refreshDailyVerse(false);
   }, [isReady, localDate, refreshDailyVerse]);
 
-  useEffect(() => {
-    if (!isReady || appState !== 'active' || !pairCode || !supabaseConfigured) return;
-    let active = true;
-    const refresh = () => {
-      void syncPairedData(new Date())
-        .then(async ({ state, quranProgress }) => {
-          if (!active) return;
-          setSyncState(state);
-          setPairedQuranProgress(quranProgress);
-          await refreshDailyVerse(false);
-        })
-        .catch((error: unknown) => {
-          if (active) {
-            void handlePairingFailure(error, 'please try again');
-          }
-        });
-    };
-    refresh();
-    const interval = setInterval(refresh, 60_000);
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
-  }, [appState, handlePairingFailure, isReady, pairCode, refreshDailyVerse, supabaseConfigured]);
   const prayerTimes = city
     ? getPrayerTimes(city, now, preferences.calculationMethod)
     : undefined;
@@ -834,199 +737,6 @@ export default function App() {
     }
   };
 
-  const createPairing = async () => {
-    setPairBusy(true);
-    setPairMessage('');
-    try {
-      const code = await createPairCode();
-      setPairCode(code);
-      const next = await linkPairedAccount();
-      setSyncState(next);
-      const synced = await syncPairedData(new Date());
-      setSyncState(synced.state);
-      setPairedQuranProgress(synced.quranProgress);
-      await refreshDailyVerse(false);
-      setPairMessage('Pairing code created. Enter it in Furqan to link the apps.');
-    } catch (error) {
-      setPairMessage(friendlyError(error, 'Could not create a pairing code.'));
-    } finally {
-      setPairBusy(false);
-    }
-  };
-
-  const joinPairing = async () => {
-    setPairBusy(true);
-    setPairMessage('');
-    try {
-      const code = await joinPairCode(pairEntry);
-      setPairCode(code);
-      setPairEntry('');
-      const next = await linkPairedAccount();
-      setSyncState(next);
-      const synced = await syncPairedData(new Date());
-      setSyncState(synced.state);
-      setPairedQuranProgress(synced.quranProgress);
-      await refreshDailyVerse(false);
-      setPairMessage('Furqan is paired. Your streak, reading position, saved verses, memorized ayahs, and verse of the day now sync.');
-    } catch (error) {
-      setPairMessage(friendlyError(error, 'Could not join that pairing.'));
-    } finally {
-      setPairBusy(false);
-    }
-  };
-
-  const disconnectThisDevice = async () => {
-    await forgetPairCode();
-    const next = await unlinkPairedAccount();
-    setPairCode(null);
-    setSyncState(next);
-    setPairMessage('This device is disconnected. Other devices with this code remain paired.');
-  };
-
-  const revokePairing = async () => {
-    if (!pairCode) return;
-    setPairBusy(true);
-    try {
-      const revoked = await revokePairCode(pairCode);
-      await forgetPairCode();
-      const next = await unlinkPairedAccount();
-      setPairCode(null);
-      setSyncState(next);
-      setPairMessage(
-        revoked
-          ? 'Pairing revoked everywhere. Shared cloud records were deleted; local data remains on this device.'
-          : 'This pairing was already revoked. Local data remains on this device.',
-      );
-    } catch (error) {
-      setPairMessage(friendlyError(error, 'Could not revoke the app pairing.'));
-    } finally {
-      setPairBusy(false);
-    }
-  };
-
-  const loadCloudBackupForAccount = async (email: string) => {
-    const remote = await readCloudBackup('mishkah');
-    setCloudBackupExists(Boolean(remote));
-    setCloudBackupUpdatedAt(remote?.updated_at ?? null);
-    const enabled = await isAutomaticCloudBackupEnabled(email);
-    if (!remote) {
-      await writeCloudBackup('mishkah', await createMishkahCloudBackup());
-      await enableAutomaticCloudBackup(email);
-      setCloudBackupExists(true);
-      setCloudBackupUpdatedAt(new Date().toISOString());
-      setCloudBackupReady(true);
-      setBackupMessage('Your first Mishkah cloud backup is saved. Future settings and streak changes back up automatically.');
-      return;
-    }
-    setCloudBackupReady(enabled);
-    setBackupMessage(
-      enabled
-        ? 'Automatic cloud backup is active for this account.'
-        : 'A cloud backup exists. Restore it on this device or replace it with this device’s data.',
-    );
-  };
-
-  const sendBackupCode = async () => {
-    setBackupBusy(true);
-    setBackupMessage('');
-    try {
-      await requestEmailCode(backupEmail);
-      setBackupCodeSent(true);
-      setBackupMessage('A one-time sign-in code was sent to your email.');
-    } catch (error) {
-      setBackupMessage(friendlyError(error, 'Could not send the sign-in code.'));
-    } finally {
-      setBackupBusy(false);
-    }
-  };
-
-  const verifyBackupCode = async () => {
-    setBackupBusy(true);
-    setBackupMessage('');
-    try {
-      const email = await verifyEmailCode(backupEmail, backupCode);
-      setAccountEmail(email);
-      setBackupEmail(email);
-      setBackupCode('');
-      setBackupCodeSent(false);
-      await loadCloudBackupForAccount(email);
-    } catch (error) {
-      setBackupMessage(friendlyError(error, 'Could not verify the email code.'));
-    } finally {
-      setBackupBusy(false);
-    }
-  };
-
-  const backUpThisDevice = async () => {
-    if (!accountEmail) return;
-    if (cloudBackupExists && !cloudBackupReady) {
-      const replace = Platform.OS === 'web'
-        ? window.confirm('Replace the existing Mishkah cloud backup with the data on this device?')
-        : await new Promise<boolean>((resolve) => {
-            Alert.alert(
-              'Replace cloud backup?',
-              'This will replace the existing Mishkah cloud backup with the data on this device.',
-              [
-                { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-                { text: 'Replace backup', style: 'destructive', onPress: () => resolve(true) },
-              ],
-              { cancelable: true, onDismiss: () => resolve(false) },
-            );
-          });
-      if (!replace) return;
-    }
-    setBackupBusy(true);
-    setBackupMessage('');
-    try {
-      await writeCloudBackup('mishkah', await createMishkahCloudBackup());
-      await enableAutomaticCloudBackup(accountEmail);
-      setCloudBackupExists(true);
-      setCloudBackupReady(true);
-      setCloudBackupUpdatedAt(new Date().toISOString());
-      setBackupMessage('This device is backed up. Future settings and streak changes will sync automatically.');
-    } catch (error) {
-      setBackupMessage(friendlyError(error, 'Could not back up this device.'));
-    } finally {
-      setBackupBusy(false);
-    }
-  };
-
-  const restoreCloudBackup = async () => {
-    setBackupBusy(true);
-    setBackupMessage('');
-    try {
-      const remote = await readCloudBackup('mishkah');
-      if (!remote) throw new Error('There is no Mishkah cloud backup for this account yet.');
-      const restoredPreferences = await restoreMishkahCloudBackup(remote.payload);
-      setPreferences(restoredPreferences);
-      setSyncState(await readSyncState());
-      if (!accountEmail) throw new Error('The signed-in email is unavailable.');
-      await enableAutomaticCloudBackup(accountEmail);
-      setCloudBackupReady(true);
-      setCloudBackupExists(true);
-      setCloudBackupUpdatedAt(remote.updated_at);
-      setBackupMessage('Mishkah settings and streak restored. Automatic backup is now active.');
-    } catch (error) {
-      setBackupMessage(friendlyError(error, 'Could not restore the cloud backup.'));
-    } finally {
-      setBackupBusy(false);
-    }
-  };
-
-  const signOutBackupAccount = async () => {
-    setBackupBusy(true);
-    try {
-      await signOutCloudAccount();
-      setAccountEmail(null);
-      setCloudBackupReady(false);
-      setBackupMessage('Signed out. Your local app data was not changed.');
-    } catch (error) {
-      setBackupMessage(friendlyError(error, 'Could not sign out.'));
-    } finally {
-      setBackupBusy(false);
-    }
-  };
-
   const runSystemReport = async () => {
     setReportBusy(true);
     try {
@@ -1060,26 +770,6 @@ export default function App() {
     }
   };
 
-  const handleSyncNow = async () => {
-    try {
-      const next = await flushSyncQueue();
-      setSyncState(next);
-      const synced = await syncPairedData(new Date());
-      setSyncState(synced.state);
-      setPairedQuranProgress(synced.quranProgress);
-      await refreshDailyVerse(false);
-      setNotice(synced.state.status === 'synced' ? 'Mishkah and Furqan are in sync.' : 'Your queued updates are synced.');
-    } catch (error) {
-      if (isPairingCodeRevokedError(error)) {
-        await handlePairingFailure(error, 'The pairing was revoked.');
-        return;
-      }
-      setNotice(friendlyError(error, 'Sync could not complete. Your updates remain queued on this device.'));
-      const latest = await readSyncState();
-      setSyncState(latest);
-    }
-  };
-
   const openSupportLink = async (url: string) => {
     try {
       await Linking.openURL(url);
@@ -1087,37 +777,6 @@ export default function App() {
       setNotice('This support link could not be opened on your device.');
     }
   };
-
-  useEffect(() => {
-    if (!isReady || !supabaseConfigured) return;
-    let active = true;
-    void getCloudUserEmail()
-      .then(async (email) => {
-        if (!active || !email) return;
-        setAccountEmail(email);
-        setBackupEmail(email);
-        await loadCloudBackupForAccount(email);
-      })
-      .catch((error: unknown) => {
-        if (active) setBackupMessage(friendlyError(error, 'Could not load the cloud backup account.'));
-      });
-    return () => {
-      active = false;
-    };
-  }, [isReady, supabaseConfigured]);
-
-  useEffect(() => {
-    if (!isReady || !supabaseConfigured || !cloudBackupReady || !accountEmail) return;
-    const timer = setTimeout(() => {
-      void createMishkahCloudBackup()
-        .then((backup) => writeCloudBackup('mishkah', backup))
-        .then(() => setCloudBackupUpdatedAt(new Date().toISOString()))
-        .catch((error: unknown) => {
-          setBackupMessage(friendlyError(error, 'Automatic cloud backup failed. Your data remains on this device.'));
-        });
-    }, 1200);
-    return () => clearTimeout(timer);
-  }, [isReady, supabaseConfigured, cloudBackupReady, accountEmail, preferences, syncState?.streak]);
 
   const openFurqan = async () => {
     await openSupportLink(furqanBaseUrl);
@@ -1591,81 +1250,6 @@ export default function App() {
                   </View>
                 </View>
               </View>
-
-              {pairCode ? (
-                <>
-                  <View style={styles.sectionHeading}>
-                    <View>
-                      <Text style={styles.sectionTitle}>Qur’an library and progress</Text>
-                      <Text style={styles.sectionCaption}>Shared with Furqan · updates while paired</Text>
-                    </View>
-                  </View>
-                  <View style={styles.pairedQuranCard}>
-                    <Text style={styles.pairedQuranEyebrow}>READING PROGRESS</Text>
-                    <View style={styles.pairedQuranStats}>
-                      <View style={styles.pairedQuranStat}>
-                        <Text style={styles.pairedQuranStatValue}>{memorizedAyahs.length}</Text>
-                        <Text style={styles.pairedQuranStatLabel}>Memorized ayahs</Text>
-                      </View>
-                      <View style={styles.pairedQuranStat}>
-                        <Text style={styles.pairedQuranStatValue}>{pairedQuranProgress.bookmarks.length}</Text>
-                        <Text style={styles.pairedQuranStatLabel}>Saved verses</Text>
-                      </View>
-                    </View>
-                    {lastFurqanPosition ? (
-                      <Pressable
-                        accessibilityRole="link"
-                        accessibilityLabel={`Continue reading ${lastFurqanPosition.name ?? `Surah ${lastFurqanPosition.surah}`} verse ${lastFurqanPosition.ayah} in Furqan`}
-                        onPress={() => {
-                          void openSupportLink(`${furqanBaseUrl}/surah/${lastFurqanPosition.surah}?ayah=${lastFurqanPosition.ayah}`);
-                        }}
-                        style={styles.pairedQuranAction}
-                      >
-                        <Text style={styles.pairedQuranActionTitle}>Continue reading in Furqan</Text>
-                        <Text style={styles.pairedQuranActionDetail}>
-                          {lastFurqanPosition.name ?? `Surah ${lastFurqanPosition.surah}`} · {lastFurqanPosition.surah}:{lastFurqanPosition.ayah} ›
-                        </Text>
-                      </Pressable>
-                    ) : null}
-                    {pairedQuranProgress.bookmarks.slice(0, 3).map((bookmark) => (
-                      <Pressable
-                        accessibilityRole="link"
-                        key={`${bookmark.surah}:${bookmark.ayah}`}
-                        onPress={() => void openSupportLink(`${furqanBaseUrl}/surah/${bookmark.surah}?ayah=${bookmark.ayah}`)}
-                        style={styles.pairedQuranBookmark}
-                      >
-                        <Text style={styles.pairedQuranBookmarkText}>
-                          {bookmark.name ?? `Surah ${bookmark.surah}`} · {bookmark.surah}:{bookmark.ayah} ›
-                        </Text>
-                      </Pressable>
-                    ))}
-                    {memorizedAyahs.slice(0, 3).map((item) => (
-                      <Pressable
-                        accessibilityRole="link"
-                        key={`memorized:${item.id}`}
-                        onPress={() => void openSupportLink(`${furqanBaseUrl}/surah/${item.surah}?ayah=${item.ayah}`)}
-                        style={styles.pairedQuranBookmark}
-                      >
-                        <Text style={styles.pairedQuranBookmarkText}>
-                          Memorized · {item.surahName} · {item.surah}:{item.ayah} ›
-                        </Text>
-                      </Pressable>
-                    ))}
-                    {memorizedAyahs.length > 0 ? (
-                      <Text style={styles.pairedQuranNote}>
-                        Memorization progress is synced from your Furqan library.
-                      </Text>
-                    ) : null}
-                    {!lastFurqanPosition &&
-                    pairedQuranProgress.bookmarks.length === 0 &&
-                    memorizedAyahs.length === 0 ? (
-                      <Text style={styles.pairedQuranNote}>
-                        Reading position, saved verses, and memorized ayahs will appear here after Furqan shares your progress.
-                      </Text>
-                    ) : null}
-                  </View>
-                </>
-              ) : null}
 
               <View style={styles.sectionHeading}>
                 <View>
@@ -2403,28 +1987,20 @@ export default function App() {
           {screen === 'More' ? (
             <>
               <View style={styles.introBlock}>
-                <Text style={styles.eyebrow}>YOUR MISHKAH</Text>
+                <Text style={styles.eyebrow}>YOUR MANĀRA</Text>
                 <Text style={styles.pageTitle}>Your profile.</Text>
-                <Text style={styles.bodyText}>Account, progress, preferences, and the companion Furqan app.</Text>
+                <Text style={styles.bodyText}>Account, progress, preferences, and your Quran journey.</Text>
               </View>
-              <Pressable accessibilityRole="button" onPress={() => setProfileModalVisible(true)} style={styles.moreAccountRow}>
-                <View style={styles.moreIcon}><Text style={styles.moreIconText}>◎</Text></View>
-                <View style={styles.moreRowCopy}>
-                  <Text style={styles.moreRowTitle}>Pairing & sync</Text>
-                  <Text style={styles.moreRowDescription}>{pairCode ? 'Paired with Furqan' : 'Continue locally or pair with Furqan'}</Text>
-                </View>
-                <Text style={styles.moreArrow}>›</Text>
-              </Pressable>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Open Furqan, the companion Quran app"
+                accessibilityLabel="Open the Manāra Quran reader"
                 onPress={() => void openFurqan()}
                 style={styles.moreAccountRow}
               >
                 <View style={styles.moreIcon}><Text style={styles.moreIconText}>۞</Text></View>
                 <View style={styles.moreRowCopy}>
-                  <Text style={styles.moreRowTitle}>Explore Furqan</Text>
-                  <Text style={styles.moreRowDescription}>Your companion Qur’an reading app by LIXZON</Text>
+                  <Text style={styles.moreRowTitle}>Open Quran reader</Text>
+                  <Text style={styles.moreRowDescription}>Continue in the Manāra Quran module</Text>
                 </View>
                 <Text style={styles.moreArrow}>↗</Text>
               </Pressable>
@@ -2597,180 +2173,9 @@ export default function App() {
                 </Text>
               </View>
               <View style={styles.settingsCard}>
-                <Text style={styles.settingGroupTitle}>Cloud backup and restore</Text>
-                <Text style={styles.settingDescription}>
-                  Sign in with an email code to keep Mishkah settings, prayer and dhikr progress, and your streak backed up for a new device. Your Furqan backup is stored separately under the same email account.
-                </Text>
-                {!supabaseConfigured ? (
-                  <Text style={styles.syncMeta}>
-                    Cloud backup is unavailable until this build is configured with the shared Supabase project. Your data stays on this device.
-                  </Text>
-                ) : accountEmail ? (
-                  <>
-                    <View style={styles.syncCard}>
-                      <Text style={styles.syncLabel}>SIGNED IN</Text>
-                      <Text style={styles.syncValue}>{accountEmail}</Text>
-                      <Text style={styles.syncMeta}>
-                        {cloudBackupExists && cloudBackupUpdatedAt
-                          ? `Last cloud backup: ${new Date(cloudBackupUpdatedAt).toLocaleString()}`
-                          : 'No cloud backup is available yet.'}
-                      </Text>
-                    </View>
-                    {cloudBackupExists && !cloudBackupReady ? (
-                      <ActionButton
-                        label="Restore cloud backup to this device"
-                        onPress={() => void restoreCloudBackup()}
-                        palette={palette}
-                        styles={styles}
-                        disabled={backupBusy}
-                        busy={backupBusy}
-                      />
-                    ) : null}
-                    <ActionButton
-                      label={cloudBackupExists ? 'Replace cloud backup with this device' : 'Back up this device now'}
-                      onPress={() => void backUpThisDevice()}
-                      palette={palette}
-                      styles={styles}
-                      disabled={backupBusy}
-                      busy={backupBusy}
-                    />
-                    <ActionButton
-                      label="Sign out of cloud backup"
-                      onPress={() => void signOutBackupAccount()}
-                      palette={palette}
-                      styles={styles}
-                      disabled={backupBusy}
-                    />
-                  </>
-                ) : (
-                  <>
-                    <TextInput
-                      accessibilityLabel="Backup account email"
-                      autoCapitalize="none"
-                      autoComplete="email"
-                      autoCorrect={false}
-                      keyboardType="email-address"
-                      onChangeText={setBackupEmail}
-                      placeholder="Email address"
-                      placeholderTextColor={palette.muted}
-                      style={styles.guideInput}
-                      value={backupEmail}
-                      editable={!backupBusy && !backupCodeSent}
-                    />
-                    <ActionButton
-                      label={backupBusy ? 'Sending code…' : 'Send email sign-in code'}
-                      onPress={() => void sendBackupCode()}
-                      palette={palette}
-                      styles={styles}
-                      disabled={backupBusy || !backupEmail.trim()}
-                      busy={backupBusy}
-                    />
-                    {backupCodeSent ? (
-                      <>
-                        <TextInput
-                          accessibilityLabel="Email sign-in code"
-                          autoCapitalize="none"
-                          autoCorrect={false}
-                          keyboardType="number-pad"
-                          onChangeText={setBackupCode}
-                          placeholder="One-time code from your email"
-                          placeholderTextColor={palette.muted}
-                          style={styles.guideInput}
-                          value={backupCode}
-                        />
-                        <ActionButton
-                          label={backupBusy ? 'Verifying…' : 'Verify code'}
-                          onPress={() => void verifyBackupCode()}
-                          palette={palette}
-                          styles={styles}
-                          disabled={backupBusy || !backupCode.trim()}
-                          busy={backupBusy}
-                        />
-                      </>
-                    ) : null}
-                  </>
-                )}
-                {backupMessage ? <Text style={styles.healthMessage}>{backupMessage}</Text> : null}
-              </View>
-              <View style={styles.settingsCard}>
-                <Text style={styles.settingGroupTitle}>Pair with Furqan</Text>
-                <Text style={styles.settingDescription}>
-                  {syncConfigured
-                    ? 'Pair once with Furqan to sync its reading streak, reading position, saved verses, memorized ayahs, and the Qur’an verse of the day. No account sign-in is needed.'
-                    : 'Pairing is not switched on for this build. Everything else in Mishkah works offline.'}
-                </Text>
-                <View style={styles.syncCard}>
-                  <Text style={styles.syncLabel}>Status</Text>
-                  <Text style={styles.syncValue}>{pairCode && syncConfigured ? 'Paired with Furqan' : 'Local-only mode'}</Text>
-                  <Text style={styles.syncMeta}>{syncState?.status ?? 'idle'} · {syncState?.queuedCount ?? 0} queued updates</Text>
-                  {pairCode && syncConfigured ? <Text style={styles.syncMeta}>Pairing code {pairCode}</Text> : null}
-                  {!syncConfigured ? (
-                    <Text style={styles.syncMeta}>
-                      The app needs a shared sync project before a code can be created. Your data stays on this device.
-                    </Text>
-                  ) : null}
-                </View>
-                {pairCode && syncConfigured ? (
-                  <View style={styles.pairActions}>
-                    <ActionButton
-                      label={syncConfigured ? 'Sync now' : 'Sync unavailable'}
-                      onPress={() => void handleSyncNow()}
-                      palette={palette}
-                      styles={styles}
-                      disabled={!syncConfigured || pairBusy}
-                    />
-                    <ActionButton
-                      label="Disconnect this device"
-                      onPress={() => void disconnectThisDevice()}
-                      palette={palette}
-                      styles={styles}
-                      disabled={pairBusy}
-                    />
-                    <ActionButton
-                      label="Revoke pairing everywhere"
-                      onPress={() => setRevokeConfirmVisible(true)}
-                      palette={palette}
-                      styles={styles}
-                      disabled={pairBusy}
-                      danger
-                    />
-                  </View>
-                ) : (
-                  <>
-                    <ActionButton
-                      label={pairBusy ? 'Working…' : 'Create pairing code'}
-                      onPress={() => void createPairing()}
-                      palette={palette}
-                      styles={styles}
-                      disabled={pairBusy || !supabaseConfigured}
-                      busy={pairBusy}
-                    />
-                    <TextInput
-                      accessibilityLabel="Furqan pairing code"
-                      autoCapitalize="characters"
-                      autoCorrect={false}
-                      onChangeText={setPairEntry}
-                      placeholder="Enter Furqan’s 20-character code"
-                      placeholderTextColor={palette.muted}
-                      editable={syncConfigured}
-                      style={styles.guideInput}
-                      value={pairEntry}
-                    />
-                    <ActionButton
-                      label="Pair with Furqan"
-                      onPress={() => void joinPairing()}
-                      palette={palette}
-                      styles={styles}
-                      disabled={pairBusy || !pairEntry.trim() || !supabaseConfigured}
-                    />
-                  </>
-                )}
-                {pairMessage ? <Text style={styles.healthMessage}>{pairMessage}</Text> : null}
-              </View>
-              <View style={styles.settingsCard}>
                 <Text style={styles.settingGroupTitle}>Private health report</Text>
                 <Text style={styles.settingDescription}>
-                  Run a local check of storage, preferences, Furqan pairing, and today’s verse. The email draft includes start and finish times, duration, and each result. Mishkah does not keep report history or send reports in the background.
+                  Run a private check of storage, preferences, and today’s verse. The email draft includes start and finish times, duration, and each result. Manāra does not keep report history or send reports in the background.
                 </Text>
                 <ActionButton
                   label={reportBusy ? 'Checking…' : 'Run check and email report'}
@@ -2891,7 +2296,7 @@ export default function App() {
             <View style={styles.profileDrawerHeading}>
               <View>
                 <Text style={styles.settingGroupTitle}>Your account</Text>
-                <Text style={styles.settingDescription}>Keep your progress close across devices.</Text>
+                <Text style={styles.settingDescription}>Your Manāra account and saved progress.</Text>
               </View>
               <Pressable
                 accessibilityRole="button"
@@ -2902,74 +2307,6 @@ export default function App() {
                 <Text style={styles.profileCloseText}>×</Text>
               </Pressable>
             </View>
-            <View style={styles.syncCard}>
-              <Text style={styles.syncLabel}>PAIRING STATUS</Text>
-              <Text style={styles.syncValue}>{pairCode && syncConfigured ? 'Paired with Furqan' : 'Local-only mode'}</Text>
-              <Text style={styles.syncMeta}>
-                {pairCode && syncConfigured ? `Pairing code ${pairCode}` : 'Your settings remain on this device.'}
-              </Text>
-              {!syncConfigured ? (
-                <Text style={styles.syncMeta}>
-                  Pairing needs a shared sync project, which this build does not have. Your data stays on this device.
-                </Text>
-              ) : null}
-            </View>
-            {pairCode && syncConfigured ? (
-              <View style={styles.pairActions}>
-                <ActionButton
-                  label={syncConfigured ? 'Sync now' : 'Sync unavailable'}
-                  onPress={() => void handleSyncNow()}
-                  palette={palette}
-                  styles={styles}
-                  disabled={!syncConfigured || pairBusy}
-                />
-                <ActionButton
-                  label="Disconnect this device"
-                  onPress={() => void disconnectThisDevice()}
-                  palette={palette}
-                  styles={styles}
-                  disabled={pairBusy}
-                />
-                <ActionButton
-                  label="Revoke pairing everywhere"
-                  onPress={() => setRevokeConfirmVisible(true)}
-                  palette={palette}
-                  styles={styles}
-                  disabled={pairBusy}
-                  danger
-                />
-              </View>
-            ) : (
-              <>
-                <ActionButton
-                  label={pairBusy ? 'Working…' : 'Create pairing code'}
-                  onPress={() => void createPairing()}
-                  palette={palette}
-                  styles={styles}
-                  disabled={pairBusy || !supabaseConfigured}
-                  busy={pairBusy}
-                />
-                <TextInput
-                  accessibilityLabel="Furqan pairing code"
-                  autoCapitalize="characters"
-                  autoCorrect={false}
-                  onChangeText={setPairEntry}
-                  placeholder="Enter Furqan’s 20-character code"
-                  placeholderTextColor={palette.muted}
-                  editable={syncConfigured}
-                  style={styles.guideInput}
-                  value={pairEntry}
-                />
-                <ActionButton
-                  label="Pair with Furqan"
-                  onPress={() => void joinPairing()}
-                  palette={palette}
-                  styles={styles}
-                  disabled={pairBusy || !pairEntry.trim() || !supabaseConfigured}
-                />
-              </>
-            )}
-            {pairMessage ? <Text style={styles.healthMessage}>{pairMessage}</Text> : null}
             <Pressable
               accessibilityRole="button"
               onPress={() => {
@@ -3040,11 +2377,10 @@ export default function App() {
               })}
             </View>
             <ActionButton
-              label="Open pairing & sync"
+              label="Open app settings"
               onPress={() => {
                 setStreakModalVisible(false);
-                setScreen('More');
-                if (!pairCode) setProfileModalVisible(true);
+                setScreen('Settings');
               }}
               palette={palette}
               styles={styles}
@@ -3146,45 +2482,6 @@ export default function App() {
         </View>
       </Modal>
 
-      <Modal
-        animationType="fade"
-        onRequestClose={() => setRevokeConfirmVisible(false)}
-        transparent
-        visible={revokeConfirmVisible}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalIcon}>
-              <Text style={styles.modalIconText}>!</Text>
-            </View>
-            <Text style={styles.modalTitle}>Revoke pairing everywhere?</Text>
-            <Text style={styles.modalMessage}>
-              Every connected device will be disconnected and the shared cloud records will be deleted. This device keeps its local data.
-            </Text>
-            <View style={styles.modalActions}>
-              <Pressable
-                accessibilityRole="button"
-                disabled={pairBusy}
-                onPress={() => setRevokeConfirmVisible(false)}
-                style={[styles.modalSecondaryButton, pairBusy && styles.disabledButton]}
-              >
-                <Text style={styles.modalSecondaryText}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                disabled={pairBusy}
-                onPress={() => {
-                  setRevokeConfirmVisible(false);
-                  void revokePairing();
-                }}
-                style={[styles.modalDangerButton, pairBusy && styles.disabledButton]}
-              >
-                <Text style={styles.modalDangerText}>Revoke everywhere</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -3486,25 +2783,6 @@ function createStyles(colors: Palette) {
     calendarEventRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10, marginTop: 9, borderTopWidth: 1, borderTopColor: colors.line },
     calendarEventTitle: { color: colors.ink, fontSize: 12, fontWeight: '600' },
     calendarEventCountdown: { color: colors.accent, fontSize: 11, fontWeight: '700' },
-    pairedQuranCard: {
-      paddingHorizontal: 16,
-      paddingVertical: 15,
-      borderRadius: 20,
-      borderWidth: 1,
-      borderColor: colors.line,
-      backgroundColor: colors.surface,
-    },
-    pairedQuranEyebrow: { color: colors.gold, fontSize: 9, fontWeight: '700', letterSpacing: 0.9 },
-    pairedQuranStats: { flexDirection: 'row', gap: 12, marginTop: 12 },
-    pairedQuranStat: { flex: 1, padding: 11, borderRadius: 13, backgroundColor: colors.surfaceRaised },
-    pairedQuranStatValue: { color: colors.ink, fontSize: 18, fontWeight: '700' },
-    pairedQuranStatLabel: { color: colors.muted, fontSize: 9, marginTop: 3 },
-    pairedQuranAction: { paddingVertical: 12, marginTop: 7, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.line },
-    pairedQuranActionTitle: { color: colors.ink, fontSize: 11, fontWeight: '700' },
-    pairedQuranActionDetail: { color: colors.accent, fontSize: 10, fontWeight: '600', marginTop: 4 },
-    pairedQuranBookmark: { paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.line },
-    pairedQuranBookmarkText: { color: colors.accent, fontSize: 10, fontWeight: '600' },
-    pairedQuranNote: { color: colors.muted, fontSize: 9, lineHeight: 14, marginTop: 10 },
     fastingGuidanceCard: {
       paddingHorizontal: 16,
       paddingTop: 15,
@@ -4030,7 +3308,6 @@ function createStyles(colors: Palette) {
       gap: 8,
       marginTop: 12,
     },
-    pairActions: { marginTop: 2 },
     choiceRow: { flexDirection: 'row', gap: 9, marginTop: 13 },
     choice: {
       flex: 1,

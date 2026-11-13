@@ -1,6 +1,4 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getSavedPairCode } from './cloudSync';
-import { readPairedHighlight } from './pairSync';
 import { checkPreferencesStorage } from './preferences';
 
 export interface SystemReportItem {
@@ -55,24 +53,6 @@ export async function createSystemReport(): Promise<SystemReport> {
     detail: preferencesOk
       ? 'Prayer, theme, and reminder settings load correctly.'
       : 'Saved preferences could not be read.',
-  });
-
-  const pairCode = await getSavedPairCode();
-  items.push({
-    label: 'Furqan pairing',
-    ok: Boolean(pairCode),
-    detail: pairCode
-      ? 'Streak and verse of the day sync with Furqan is active.'
-      : 'Not paired yet. Mishkah still works offline on this device.',
-  });
-
-  const highlight = await readPairedHighlight(new Date());
-  items.push({
-    label: 'Verse of the day',
-    ok: highlight !== null,
-    detail: highlight !== null
-      ? 'Today’s verse is the one Furqan published.'
-      : 'Waiting for Furqan’s daily verse record for today.',
   });
 
   const finishedAt = Date.now();

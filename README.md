@@ -74,26 +74,18 @@ full surah at that ayah in Furqan, and each entry links to a video search for a
 fuller talk rather than reproducing someone else's narration in the app.
 Content lives in `src/domain/stories.ts`, so adding a story is a data change,
 not a UI change.
-### Pairing with Furqan
+### Manāra integration
 
-Mishkah and Furqan share progress through one private 20-character pairing
-code without Google sign-in or an account login. Cloud backup uses a separate
-email-code flow. Set `EXPO_PUBLIC_SUPABASE_URL` and
-`EXPO_PUBLIC_SUPABASE_ANON_KEY` for the shared Supabase project, apply both
-migrations listed in `SUPABASE_SETUP.md`, then create a code in Furqan
-(Settings -> Pair Mishkah) and enter it in Mishkah (Settings -> Pair with
-Furqan).
+The Manāra web application combines Mishka and Furqan under one navigation
+shell. Quran references in Mishka stories open the selected surah and ayah
+directly in Furqan. Cross-device pairing and paired progress synchronization
+have been retired. Links between archive stories and Quran passages stay
+inside Manāra.
 
-While paired, Mishkah shows Furqan's reading streak, the same verse of the
-day, and opens Qur'an references in the full surah inside Furqan. The code is
-stored in SecureStore on native devices and AsyncStorage on web. Unpairing
-removes it from this device only.
-
-Without those settings Mishkah stays local-only and does not claim that sync
-is active. The private health report in Settings checks storage, preferences,
-pairing, and today's verse. It is not retained in app storage. When requested,
-Mishkah opens a pre-addressed email draft containing check results, start/end
-times, and duration; the user reviews and sends it from their email app.
+The Expo source retains native implementations during the transition, but no
+longer exposes a separate Mishkah account or cloud-backup flow. The combined
+Manāra web app owns the unified account backup. See
+[Manāra's Supabase setup](../Furqan/SUPABASE_SETUP.md) for its configuration.
 
 ### Rafiq online answers
 
