@@ -4,7 +4,7 @@ import { KEYS, hasState, loadState } from '../persist';
 /**
  * Universal likes ("favourites") for every kind of content the app shows.
  *
- * One store holds each content category so the Favourites hub, the like buttons
+ * One store holds all four categories so the Favourites hub, the like buttons
  * and the XP read-out can never disagree. It persists through the same path as
  * the other slices (localStorage + IndexedDB `kv`, plus `lib/backup.ts`), which
  * a set of separate IndexedDB tables would have bypassed.
@@ -24,17 +24,15 @@ export interface LikedAyah {
 export interface LikesState {
   surahs: number[];
   ayahs: LikedAyah[];
-  hadiths: string[];
   duas: string[];
   quotes: string[];
-  stories: string[];
 }
 
-export type LikeKind = 'surah' | 'ayah' | 'hadith' | 'dua' | 'quote' | 'story';
+export type LikeKind = 'surah' | 'ayah' | 'dua' | 'quote';
 
 export type LikedAyahInput = Omit<LikedAyah, 'likedAt'>;
 
-const emptyLikes: LikesState = { surahs: [], ayahs: [], hadiths: [], duas: [], quotes: [], stories: [] };
+const emptyLikes: LikesState = { surahs: [], ayahs: [], duas: [], quotes: [] };
 
 /** Shape of the retired `favorites` slice, kept only for one-time migration. */
 interface LegacyFavorites {
@@ -85,10 +83,8 @@ function initialLikes(): LikesState {
   return withLegacyFavorites({
     surahs: Array.isArray(stored.surahs) ? stored.surahs : [],
     ayahs: Array.isArray(stored.ayahs) ? stored.ayahs : [],
-    hadiths: Array.isArray(stored.hadiths) ? stored.hadiths : [],
     duas: Array.isArray(stored.duas) ? stored.duas : [],
     quotes: Array.isArray(stored.quotes) ? stored.quotes : [],
-    stories: Array.isArray(stored.stories) ? stored.stories : [],
   });
 }
 
@@ -96,10 +92,8 @@ function initialLikes(): LikesState {
 function normalise(state: LikesState): LikesState {
   state.surahs ??= [];
   state.ayahs ??= [];
-  state.hadiths ??= [];
   state.duas ??= [];
   state.quotes ??= [];
-  state.stories ??= [];
   return state;
 }
 
@@ -123,26 +117,18 @@ const likesSlice = createSlice({
       if (existing >= 0) state.ayahs.splice(existing, 1);
       else state.ayahs.unshift({ ...action.payload, likedAt: Date.now() });
     },
-    toggleLikedHadith(state, action: PayloadAction<string>) {
-      state.hadiths = toggleIn(normalise(state).hadiths, action.payload);
-    },
     toggleLikedDua(state, action: PayloadAction<string>) {
       state.duas = toggleIn(normalise(state).duas, action.payload);
     },
     toggleLikedQuote(state, action: PayloadAction<string>) {
       state.quotes = toggleIn(normalise(state).quotes, action.payload);
     },
-    toggleLikedStory(state, action: PayloadAction<string>) {
-      state.stories = toggleIn(normalise(state).stories, action.payload);
-    },
-    restoreLikes(_state, action: PayloadAction<Partial<LikesState>>) {
+    restoreLikes(_state, action: PayloadAction<LikesState>) {
       return {
         surahs: action.payload?.surahs ?? [],
         ayahs: action.payload?.ayahs ?? [],
-        hadiths: action.payload?.hadiths ?? [],
         duas: action.payload?.duas ?? [],
         quotes: action.payload?.quotes ?? [],
-        stories: action.payload?.stories ?? [],
       };
     },
     clearLikes() {
@@ -154,10 +140,8 @@ const likesSlice = createSlice({
 export const {
   toggleLikedSurah,
   toggleLikedAyah,
-  toggleLikedHadith,
   toggleLikedDua,
   toggleLikedQuote,
-  toggleLikedStory,
   restoreLikes,
   clearLikes,
 } = likesSlice.actions;
@@ -174,10 +158,6 @@ export function isAyahLiked(state: LikesState, surah: number, ayah: number): boo
   return state.ayahs.some((item) => item.id === id);
 }
 
-export function isHadithLiked(state: LikesState, id: string): boolean {
-  return state.hadiths.includes(id);
-}
-
 export function isDuaLiked(state: LikesState, id: string): boolean {
   return state.duas.includes(id);
 }
@@ -186,11 +166,7 @@ export function isQuoteLiked(state: LikesState, id: string): boolean {
   return state.quotes.includes(id);
 }
 
-export function isStoryLiked(state: LikesState, id: string): boolean {
-  return state.stories.includes(id);
-}
-
-/** Every liked item, across all categories. */
+/** Every liked item, across all four categories. */
 export function totalLikedItems(state: LikesState): number {
-  return state.surahs.length + state.ayahs.length + state.hadiths.length + state.duas.length + state.quotes.length + state.stories.length;
+  return state.surahs.length + state.ayahs.length + state.duas.length + state.quotes.length;
 }

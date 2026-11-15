@@ -1,19 +1,37 @@
-import { isSupabaseConfigured, supabase } from '../shared/supabase';
+﻿import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 export interface CloudBackupRecord {
   payload: Record<string, unknown>;
   updated_at: string;
 }
 
-export const CLOUD_BACKUP_ENABLED_EVENT = 'manara:cloud-backup:enabled';
-export const CLOUD_BACKUP_ENABLED_KEY_PREFIX = 'manara.cloud-backup.enabled:';
+export type CloudBackupApp = 'mishkah' | 'furqan';
+
+export const CLOUD_BACKUP_ENABLED_EVENT = 'lixzon:cloud-backup:enabled';
+export const CLOUD_BACKUP_ENABLED_KEY_PREFIX = 'lixzon.cloud-backup.enabled:furqan:';
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL?.trim() ?? '';
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim() ?? '';
+
+let client: SupabaseClient | null = null;
 
 export function isSupabaseSyncConfigured(): boolean {
-  return isSupabaseConfigured;
+  return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 }
 
-export function getSupabaseClient() {
-  return supabase;
+export function getSupabaseClient(): SupabaseClient | null {
+  if (!isSupabaseSyncConfigured()) return null;
+  if (!client) {
+    client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: true,
+        flowType: 'pkce',
+      },
+    });
+  }
+  return client;
 }
 
 export async function requestEmailCode(email: string): Promise<void> {
@@ -61,13 +79,13 @@ export async function signOutCloudAccount(): Promise<void> {
   if (error) throw new Error(`Could not sign out: ${error.message}`);
 }
 
-export async function readCloudBackup(): Promise<CloudBackupRecord | null> {
+export async function readCloudBackup(app: CloudBackupApp): Promise<CloudBackupRecord | null> {
   const supabase = getSupabaseClient();
   if (!supabase) throw new Error('Cloud backup is not configured for this build.');
   const { data, error } = await supabase
     .from('lixzon_user_backups')
     .select('payload, updated_at')
-    .eq('app_id', 'manara')
+    .eq('app_id', app)
     .maybeSingle();
   if (error) throw new Error(`Could not load the cloud backup: ${error.message}`);
   if (!data) return null;
@@ -82,7 +100,10 @@ export async function readCloudBackup(): Promise<CloudBackupRecord | null> {
   return { payload: data.payload as Record<string, unknown>, updated_at: data.updated_at };
 }
 
-export async function writeCloudBackup(payload: Record<string, unknown>): Promise<void> {
+export async function writeCloudBackup(
+  app: CloudBackupApp,
+  payload: Record<string, unknown>,
+): Promise<void> {
   const supabase = getSupabaseClient();
   if (!supabase) throw new Error('Cloud backup is not configured for this build.');
   const serialized = JSON.stringify(payload);
@@ -96,7 +117,7 @@ export async function writeCloudBackup(payload: Record<string, unknown>): Promis
     throw new Error('This backup is larger than the cloud backup limit. Use an exported backup file instead.');
   }
   const { error } = await supabase.from('lixzon_user_backups').upsert(
-    { app_id: 'manara', schema_version: 1, payload },
+    { app_id: app, schema_version: 1, payload },
     { onConflict: 'user_id,app_id' },
   );
   if (error) throw new Error(`Could not save the cloud backup: ${error.message}`);

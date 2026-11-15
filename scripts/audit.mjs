@@ -8,7 +8,7 @@
  *  - every icon referenced in JSX exists in the icon set,
  *  - the deep-link parser accepts the documented schemes and rejects junk,
  *  - the share-card catalogue still ships ten distinct scenes,
- *  - telemetry scrubs local events and Mishkah offline answers carry sources.
+ *  - telemetry scrubs local events and diagnostic reports omit sensitive data.
  *
  * Exits non-zero when anything fails so `npm run verify` can gate a release.
  */
@@ -198,10 +198,6 @@ check(constants.includes('LIXZON'), 'LIXZON attribution configured');
 
 const diagnosticPage = await readFile(path.join(root, 'src/pages/DiagnosticsPage.tsx'), 'utf8');
 const diagnosticService = await readFile(path.join(root, 'src/services/diagnostics.ts'), 'utf8');
-const assistantSource = await readFile(path.join(root, 'src/services/mishkahAssistant.ts'), 'utf8');
-const assistantPage = await readFile(path.join(root, 'src/pages/MishkahAssistantPage.tsx'), 'utf8');
-const assistantHeader = await readFile(path.join(root, 'src/components/layout/TopBar.tsx'), 'utf8');
-const schoolData = await readFile(path.join(root, 'src/data/mishkahKnowledge.ts'), 'utf8');
 const deliveryPayload = diagnosticService.match(/body:\s*JSON\.stringify\(\{([\s\S]*?)\}\),\s*\}\);/)?.[1] ?? '';
 check(diagnosticPage.includes('import.meta.env.DEV'), 'detailed developer diagnostics are development-only');
 check(diagnosticPage.includes('runUserHealthCheck()'), 'user diagnostics use the health-check flow');
@@ -210,47 +206,8 @@ check(
   deliveryPayload.length > 0 && !deliveryPayload.includes('message') && !deliveryPayload.includes('stack'),
   'diagnostic endpoint payload omits event messages and stacks',
 );
-check(
-  ['hanafi', 'maliki', 'shafii', 'hanbali', 'jafari', 'zaydi'].every((school) =>
-    schoolData.includes(`id: '${school}'`),
-  ),
-  'assistant supports the six selected Islamic schools',
-);
-check(
-  assistantHeader.includes('SwitchAppsButton') &&
-    assistantHeader.includes('Search Quran chapters') &&
-    !assistantHeader.includes('Ask Rafiq AI about the Qur’an and Islamic guidance'),
-  'home header exposes the app switcher and search without an assistant capsule',
-);
-check(
-  assistantPage.includes('id="mishkah-school"') &&
-    assistantPage.includes('title="Rafiq · app guide"') &&
-    assistantPage.includes('Rafiq can guide you to app features') &&
-    assistantPage.includes('Research on Google') &&
-    assistantPage.includes('Continue with Gemini'),
-  'Rafiq app guide discloses its scope and offers reviewed guidance and external research',
-);
-check(
-  assistantPage.includes('<details className="mb-4') &&
-    assistantPage.includes('PRAYER_CONTEXT.test(question)') &&
-    assistantPage.includes('PRAYER_CONTEXT.test(text) ? country : \'\''),
-  'assistant preferences are collapsed and location is sent only for prayer questions',
-);
-check(
-  assistantSource.includes('islamicTopicsOnly: true') &&
-    assistantSource.includes('doNotInventSchoolDifferencesOrSources: true') &&
-    assistantSource.includes('payload.schoolId !== (schoolId ?? null)') &&
-    assistantSource.includes("scope: 'uncertain'"),
-  'online assistant restricts scope and treats ambiguous topics cautiously',
-);
-check(
-  assistantSource.includes('function parseFiqhSource') &&
-    assistantSource.includes('url.protocol !== \'https:\'') &&
-    assistantSource.includes('precise location, and HTTPS URL'),
-  'school-specific answers require an auditable HTTPS fiqh citation',
-);
 
-/* ---------------------- telemetry and Mishkah ----------------------- */
+/* ---------------------- telemetry and diagnostics ------------------- */
 
 try {
   const values = new Map();
@@ -281,22 +238,12 @@ try {
     check(digest.totalEvents === 2 && digest.counts.performance === 1, 'weekly digest aggregates event categories');
     check(digest.performance.maximumLongTaskMs === 2800, 'weekly digest reports long-task duration');
 
-    const mishkah = await import(pathToFileURL(path.join(root, 'src/data/mishkahKnowledge.ts')).href);
-    check(
-      mishkah.MISHKAH_FAQS.length >= 5,
-      'Mishkah offline guidance catalogue is bundled',
-    );
-    const sourceIds = new Set(mishkah.MISHKAH_SOURCES.map((source) => source.id));
-    check(
-      mishkah.MISHKAH_FAQS.every((faq) => faq.sourceIds.every((sourceId) => sourceIds.has(sourceId))),
-      'Mishkah offline FAQs reference only approved sources',
-    );
   } finally {
     if (originalStorage) Object.defineProperty(globalThis, 'localStorage', originalStorage);
     else delete globalThis.localStorage;
   }
 } catch (error) {
-  skipped.push(`telemetry and Mishkah checks skipped (${error.code ?? error.message})`);
+  skipped.push(`telemetry and diagnostic checks skipped (${error.code ?? error.message})`);
 }
 
 /* ------------------------------ report ------------------------------ */

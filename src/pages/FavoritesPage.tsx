@@ -4,23 +4,17 @@ import { useAppDispatch, useAppSelector } from '../store';
 import { setBookmarkNote, removeBookmark, toggleAyahBookmark } from '../store/slices/bookmarksSlice';
 import {
   isDuaLiked,
-  isHadithLiked,
   isQuoteLiked,
-  isStoryLiked,
   toggleLikedAyah,
-  toggleLikedHadith,
   toggleLikedDua,
   toggleLikedQuote,
-  toggleLikedStory,
   toggleLikedSurah,
   type LikeKind,
   type LikesState,
 } from '../store/slices/likesSlice';
 import { useQuran } from '../data/QuranProvider';
-import { DUA_THEME_DESCRIPTIONS, DUAS } from '../data/duas';
-import { QUOTE_THEME_LABELS, QUOTES } from '../data/quotes';
-import { DAILY_HADITHS } from '../modules/guidance/dailyHadith';
-import { STORIES, STORY_SECTIONS, type StorySectionId } from '../../Mishkah/src/domain/stories';
+import { DUAS } from '../data/duas';
+import { QUOTES } from '../data/quotes';
 import { useXpActions } from '../services/useLikes';
 import { PageHeader, EmptyState } from '../components/ui/common';
 import { Icon } from '../components/ui/Icon';
@@ -28,25 +22,20 @@ import { LikeButton } from '../components/ui/LikeButton';
 import { Modal } from '../components/ui/Modal';
 import { XpPill } from '../components/ui/XpPill';
 import type { AyahBookmark } from '../store/slices/bookmarksSlice';
-import { ShareCardModal } from '../components/share/ShareCardModal';
-import type { CardContent, TextCardContent } from '../lib/shareCard';
-import { recordXpAction } from '../store/slices/progressSlice';
 
 type Tab = LikeKind;
 
 const TABS: Array<{ value: Tab; label: string; icon: 'stack' | 'book' | 'quote' | 'sparkle' }> = [
   { value: 'surah', label: 'Surahs', icon: 'stack' },
   { value: 'ayah', label: 'Ayahs', icon: 'book' },
-  { value: 'hadith', label: 'Hadith', icon: 'book' },
   { value: 'dua', label: 'Duas', icon: 'sparkle' },
   { value: 'quote', label: 'Sayings', icon: 'quote' },
-  { value: 'story', label: 'Stories', icon: 'book' },
 ];
 
 export default function FavoritesPage({ embedded = false }: { embedded?: boolean }) {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
-  const { copy } = useXpActions();
+  const { copy, share } = useXpActions();
   const [searchParams, setSearchParams] = useSearchParams();
   const likes = useAppSelector((s) => s.likes);
   const bookmarks = useAppSelector((s) => s.bookmarks.items);
@@ -55,15 +44,10 @@ export default function FavoritesPage({ embedded = false }: { embedded?: boolean
   const requested = searchParams.get('tab');
   const tab: Tab = TABS.some((entry) => entry.value === requested) ? (requested as Tab) : 'surah';
   const query = searchParams.get('q') ?? '';
-  const storySectionParam = searchParams.get('story-section');
-  const storySection = STORY_SECTIONS.some((section) => section.id === storySectionParam)
-    ? storySectionParam as StorySectionId
-    : null;
   const [editing, setEditing] = useState<AyahBookmark | null>(null);
   const [note, setNote] = useState('');
-  const [shareContent, setShareContent] = useState<CardContent | TextCardContent | null>(null);
 
-  const setParam = (key: 'tab' | 'q' | 'story-section', value: string) => {
+  const setParam = (key: 'tab' | 'q', value: string) => {
     const next = new URLSearchParams(searchParams);
     if (value) next.set(key, value);
     else next.delete(key);
@@ -73,13 +57,11 @@ export default function FavoritesPage({ embedded = false }: { embedded?: boolean
   const counts: Record<Tab, number> = {
     surah: likes.surahs.length,
     ayah: likes.ayahs.length + bookmarks.length,
-    hadith: likes.hadiths.length,
     dua: likes.duas.length,
     quote: likes.quotes.length,
-    story: likes.stories.length,
   };
 
-  const total = likes.surahs.length + likes.ayahs.length + likes.hadiths.length + likes.duas.length + likes.quotes.length + likes.stories.length;
+  const total = likes.surahs.length + likes.ayahs.length + likes.duas.length + likes.quotes.length;
   const needle = query.trim().toLowerCase();
   const matches = (...fields: string[]) =>
     !needle || fields.some((field) => field.toLowerCase().includes(needle));
@@ -126,16 +108,6 @@ export default function FavoritesPage({ embedded = false }: { embedded?: boolean
     [likes.duas, needle],
   );
 
-  const likedHadiths = useMemo(
-    () =>
-      likes.hadiths
-        .map((id) => DAILY_HADITHS.find((hadith) => hadith.id === id) ?? null)
-        .filter((hadith): hadith is NonNullable<typeof hadith> => hadith !== null)
-        .filter((hadith) => matches(hadith.title, hadith.summary, hadith.reference)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [likes.hadiths, needle],
-  );
-
   const likedQuotes = useMemo(
     () =>
       likes.quotes
@@ -146,67 +118,23 @@ export default function FavoritesPage({ embedded = false }: { embedded?: boolean
     [likes.quotes, needle],
   );
 
-  const likedStories = useMemo(
-    () =>
-      likes.stories
-        .map((id) => STORIES.find((story) => story.id === id) ?? null)
-        .filter((story): story is (typeof STORIES)[number] => story !== null)
-        .filter((story) => (!storySection || story.section === storySection) &&
-          matches(story.title, story.subtitle, story.short, story.era ?? '', ...(story.tags ?? []))),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [likes.stories, needle, storySection],
-  );
-
   const shareAyah = (row: { surah: number; ayah: number; surahName: string; arabic: string; translation: string }) =>
-    setShareContent({
-      surahName: row.surahName,
-      surahNumber: row.surah,
-      ayahFrom: row.ayah,
-      arabic: row.arabic,
-      translation: row.translation,
-      description: `A reflection from ${row.surahName}, ayah ${row.ayah}.`,
-    });
-  const makeShareUrl = (query: string) =>
-    new URL(`${import.meta.env.BASE_URL}${query}`, window.location.origin).toString();
-  const openHadithShare = (hadith: (typeof DAILY_HADITHS)[number]) => setShareContent({
-    kind: 'hadith',
-    title: hadith.title,
-    body: hadith.summary,
-    description: hadith.description,
-    source: hadith.reference,
-    shareUrl: makeShareUrl(`journey?hadith=${encodeURIComponent(hadith.id)}`),
-  });
-  const openDuaShare = (dua: (typeof DUAS)[number]) => setShareContent({
-    kind: 'dua',
-    title: dua.title,
-    body: dua.translation,
-    description: DUA_THEME_DESCRIPTIONS[dua.theme],
-    arabic: dua.arabic,
-    transliteration: dua.transliteration,
-    source: dua.source,
-    shareUrl: makeShareUrl(`quotes?view=duas&id=${encodeURIComponent(dua.id)}`),
-  });
-  const openQuoteShare = (quote: (typeof QUOTES)[number]) => setShareContent({
-    kind: 'saying',
-    title: 'A saying to carry with you',
-    body: `“${quote.text}”`,
-    description: `A reminder about ${quote.themes.map((theme) => QUOTE_THEME_LABELS[theme].toLowerCase()).join(' and ')}.`,
-    byline: quote.by,
-    source: quote.source,
-    shareUrl: makeShareUrl(`quotes?view=sayings&id=${encodeURIComponent(quote.id)}`),
-  });
+    share(
+      { title: `${row.surahName} ${row.surah}:${row.ayah}`, text: `${row.arabic}\n\n${row.translation}\n\n— ${row.surahName} ${row.surah}:${row.ayah}` },
+      'ayah',
+    );
 
   return (
     <div className="page-enter">
       {!embedded && (
         <PageHeader
-          title="Favorites"
-          subtitle="Your liked content, organized by type and archive."
+          title="Favourites"
+          subtitle="Everything you have liked or saved, in one place."
           right={<XpPill />}
         />
       )}
 
-      <div className="mb-3 grid grid-cols-2 gap-1 rounded-2xl bg-surface2 p-1 sm:grid-cols-6" role="tablist" aria-label="Favorite categories">
+      <div className="mb-3 grid grid-cols-4 gap-1 rounded-2xl bg-surface2 p-1" role="tablist" aria-label="Favourite types">
         {TABS.map((entry) => {
           const active = tab === entry.value;
           return (
@@ -234,41 +162,17 @@ export default function FavoritesPage({ embedded = false }: { embedded?: boolean
         <input
           value={query}
           onChange={(event) => setParam('q', event.target.value)}
-          placeholder="Search your favorites…"
-          aria-label="Search favorites"
+          placeholder="Search your favourites…"
+          aria-label="Search favourites"
           className="w-full rounded-2xl border border-line bg-surface py-2.5 pl-10 pr-4 text-sm text-ink placeholder:text-mut focus:border-accent focus:outline-none"
         />
       </div>
 
-      {tab === 'story' && (
-        <div className="thin-scroll -mx-4 mb-3 flex gap-2 overflow-x-auto px-4 pb-1" role="group" aria-label="Filter favorite stories by archive">
-          <button
-            type="button"
-            aria-pressed={storySection === null}
-            onClick={() => setParam('story-section', '')}
-            className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold ${storySection === null ? 'bg-accent text-onaccent' : 'bg-surface text-mut hover:text-ink'}`}
-          >
-            All stories
-          </button>
-          {STORY_SECTIONS.map((section) => (
-            <button
-              key={section.id}
-              type="button"
-              aria-pressed={storySection === section.id}
-              onClick={() => setParam('story-section', section.id)}
-              className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold ${storySection === section.id ? 'bg-accent text-onaccent' : 'bg-surface text-mut hover:text-ink'}`}
-            >
-              {section.label}
-            </button>
-          ))}
-        </div>
-      )}
-
       {total === 0 && bookmarks.length === 0 ? (
         <EmptyState
           icon="heart"
-          title="No favorites yet"
-          message="Tap a heart on a Quran passage, Hadith, du’a, saying, or story. Your favorites will appear here by category."
+          title="Nothing saved yet"
+          message="Tap the heart on a surah, ayah, dua or saying and it will appear here."
           action={
             <button type="button" onClick={() => navigate('/')} className="min-h-12 rounded-full bg-accent px-5 py-2 text-sm font-semibold text-onaccent">
               Browse surahs
@@ -297,7 +201,7 @@ export default function FavoritesPage({ embedded = false }: { embedded?: boolean
                   <span className="shrink-0 text-xs font-semibold text-accent">Open</span>
                   <LikeButton
                     liked
-                    label={`Remove ${meta.englishName} from favorites`}
+                    label={`Remove ${meta.englishName} from favourites`}
                     onToggle={() => dispatch(toggleLikedSurah(meta.number))}
                   />
                 </Row>
@@ -388,7 +292,7 @@ export default function FavoritesPage({ embedded = false }: { embedded?: boolean
                     )}
                     <LikeButton
                       liked={row.liked}
-                      label={row.liked ? `Remove ayah ${row.surah}:${row.ayah} from favorites` : `Add ayah ${row.surah}:${row.ayah} to favorites`}
+                      label={row.liked ? `Remove ayah ${row.surah}:${row.ayah} from favourites` : `Add ayah ${row.surah}:${row.ayah} to favourites`}
                       onToggle={() =>
                         dispatch(
                           toggleLikedAyah({
@@ -441,29 +345,10 @@ export default function FavoritesPage({ embedded = false }: { embedded?: boolean
                   body={dua.translation}
                   footnote={dua.source}
                   liked={isDuaLiked(likes, dua.id)}
-                  likeLabel={`Remove ${dua.translation.slice(0, 40)} from favorites`}
+                  likeLabel={`Remove ${dua.translation.slice(0, 40)} from favourites`}
                   onLike={() => dispatch(toggleLikedDua(dua.id))}
                   onCopy={() => void copy(`${dua.arabic}\n${dua.transliteration}\n${dua.translation}\n— ${dua.source}`, 'dua')}
-                  onShare={() => openDuaShare(dua)}
-                />
-              ))
-            ))}
-
-          {tab === 'hadith' &&
-            (likedHadiths.length === 0 ? (
-              <EmptyState icon="book" title="No liked Hadith" message={needle ? 'No liked Hadith matches that search.' : 'Tap the heart on the daily Hadith card to save it here.'} />
-            ) : (
-              likedHadiths.map((hadith) => (
-                <Card
-                  key={hadith.id}
-                  title="Hadith"
-                  body={hadith.summary}
-                  footnote={hadith.reference}
-                  liked={isHadithLiked(likes, hadith.id)}
-                  likeLabel={`Remove ${hadith.title} from favorites`}
-                  onLike={() => dispatch(toggleLikedHadith(hadith.id))}
-                  onCopy={() => void copy(`${hadith.title}\n${hadith.summary}\n— ${hadith.reference}`, 'Hadith')}
-                  onShare={() => openHadithShare(hadith)}
+                  onShare={() => void share({ title: 'A dua', text: `${dua.arabic}\n${dua.transliteration}\n${dua.translation}\n— ${dua.source}` }, 'dua')}
                 />
               ))
             ))}
@@ -479,56 +364,22 @@ export default function FavoritesPage({ embedded = false }: { embedded?: boolean
                   body={`“${quote.text}”`}
                   footnote={`${quote.by} · ${quote.source}`}
                   liked={isQuoteLiked(likes, quote.id)}
-                  likeLabel={`Remove saying by ${quote.by} from favorites`}
+                  likeLabel={`Remove saying by ${quote.by} from favourites`}
                   onLike={() => dispatch(toggleLikedQuote(quote.id))}
                   onCopy={() => void copy(`${quote.text}\n— ${quote.by} (${quote.source})`, 'saying')}
-                  onShare={() => openQuoteShare(quote)}
+                  onShare={() => void share({ title: 'A saying', text: `${quote.text}\n— ${quote.by} (${quote.source})` }, 'saying')}
                 />
-              ))
-            ))}
-
-          {tab === 'story' &&
-            (likedStories.length === 0 ? (
-              <EmptyState icon="book" title={needle || storySection ? 'No matching stories' : 'No favorite stories'} message={needle || storySection ? 'Try another search or archive category.' : 'Tap the heart on a story in Stories & Archives to save it here.'} />
-            ) : (
-              likedStories.map((story) => (
-                <article key={story.id} className="rounded-2xl border border-line bg-surface p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-accent">
-                        {STORY_SECTIONS.find((section) => section.id === story.section)?.label ?? 'Story archive'}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => navigate(`/stories?story=${encodeURIComponent(story.id)}`)}
-                        className="mt-1 text-left text-base font-semibold text-ink hover:text-accent"
-                      >
-                        {story.title}
-                      </button>
-                      <p className="mt-1 text-xs text-mut">{story.subtitle}</p>
-                    </div>
-                    <LikeButton
-                      liked={isStoryLiked(likes, story.id)}
-                      label={`Remove ${story.title} from favorites`}
-                      onToggle={() => dispatch(toggleLikedStory(story.id))}
-                    />
-                  </div>
-                  <p className="mt-3 line-clamp-3 text-sm leading-relaxed text-ink2">{story.short}</p>
-                  <div className="mt-3 border-t border-line pt-3 text-[11px] text-mut">
-                    {story.quranRefs.slice(0, 2).map((reference) => `${reference.surah}:${reference.from}${reference.to ? `–${reference.to}` : ''}`).join(' · ') || story.era}
-                  </div>
-                </article>
               ))
             ))}
         </div>
       )}
 
       <Modal open={editing !== null} onClose={() => setEditing(null)} title="Bookmark note">
-        <label htmlFor="favorite-note" className="mb-2 block text-sm font-medium text-ink">
+        <label htmlFor="favourite-note" className="mb-2 block text-sm font-medium text-ink">
           Personal reflection
         </label>
         <textarea
-          id="favorite-note"
+          id="favourite-note"
           value={note}
           onChange={(event) => setNote(event.target.value)}
           rows={5}
@@ -552,14 +403,6 @@ export default function FavoritesPage({ embedded = false }: { embedded?: boolean
           </button>
         </div>
       </Modal>
-      {shareContent ? (
-        <ShareCardModal
-          open
-          onClose={() => setShareContent(null)}
-          content={shareContent}
-          onShared={() => dispatch(recordXpAction({ kind: 'share' }))}
-        />
-      ) : null}
     </div>
   );
 }

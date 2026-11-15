@@ -1,4 +1,3 @@
-import MishkaArchivesPage from './pages/MishkaArchivesPage';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
 import { lazy, Suspense } from 'react';
@@ -18,6 +17,7 @@ import { VoiceMatchDrawer } from './components/VoiceMatchDrawer';
 import { DeepLinkHost } from './components/DeepLinkHost';
 import { CloudSyncProvider } from './components/CloudSync';
 
+const BrowsePage = lazy(() => import('./pages/BrowsePage'));
 const LibraryPage = lazy(() => import('./pages/LibraryPage'));
 const SurahReader = lazy(() => import('./pages/SurahReader'));
 const PlaylistsPage = lazy(() => import('./pages/PlaylistsPage'));
@@ -30,14 +30,6 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 const SupportPage = lazy(() => import('./pages/SupportPage'));
 const DiagnosticsPage = lazy(() => import('./pages/DiagnosticsPage'));
-const MishkahAssistantPage = lazy(() => import('./pages/MishkahAssistantPage'));
-const QuotesPage = lazy(() => import('./pages/QuotesPage'));
-const StoriesPage = lazy(() => import('./pages/StoriesPage'));
-const MishkaLibraryPage = lazy(() => import('./pages/MishkaLibraryPage'));
-const MishkaCommunityPage = lazy(() => import('./pages/MishkaCommunityPage'));
-const MishkaGuidancePage = lazy(() => import('./pages/MishkaGuidancePage'));
-
-const MishkahSettings = lazy(() => import('./components/MishkahSettings'));
 
 export default function App() {
   const { pathname } = useLocation();
@@ -72,9 +64,9 @@ export default function App() {
           <ThemeManager />
           <CloudSyncProvider />
           {offlineReady && (
-            <div className="pointer-events-none fixed inset-x-0 top-0 z-50 flex justify-center px-3 pt-3">
+            <div className="fixed inset-x-0 top-0 z-50 flex justify-center px-3 pt-3">
               <div className="rounded-full border border-line bg-surface px-3 py-1.5 text-xs font-medium text-ink shadow-lg shadow-black/10">
-                Manāra is ready to work offline.
+                Furqan is ready to work offline.
               </div>
             </div>
           )}
@@ -82,7 +74,7 @@ export default function App() {
             <div className="fixed inset-x-0 bottom-4 z-50 flex justify-center px-3">
               <div className="flex max-w-md flex-wrap items-center gap-3 rounded-2xl border border-line bg-surface px-4 py-3 shadow-lg shadow-black/10">
                 <div className="text-sm text-ink">
-                  <span className="font-semibold">Update ready.</span> A new Manāra version is available.
+                  <span className="font-semibold">Update ready.</span> A new Furqan version is available.
                 </div>
                 <div className="ml-auto flex items-center gap-2">
                   <button type="button" onClick={applyUpdate} className="rounded-full bg-accent px-3 py-1.5 text-xs font-semibold text-onaccent pressable">
@@ -95,27 +87,17 @@ export default function App() {
               </div>
             </div>
           )}
-          <Suspense fallback={<div className="p-6 text-center text-sm text-muted" role="status" aria-live="polite">Loading Manāra…</div>}>
+          <Suspense fallback={<div className="p-6 text-center text-sm text-muted" role="status" aria-live="polite">Loading Furqan…</div>}>
             <Routes>
               <Route element={<AppLayout />}>
-                <Route index element={<Navigate to="/journey" replace />} />
-                <Route path="journey" element={null} />
-                <Route path="quran" element={null} />
+                <Route index element={<BrowsePage />} />
                 <Route path="library" element={<LibraryPage />} />
-                <Route path="mishka/library" element={<MishkaLibraryPage />} />
-                <Route path="mishka/community" element={<MishkaCommunityPage />} />
-                <Route path="mishka/guidance" element={<MishkaGuidancePage />} />
-                <Route path="mishka/archives" element={<MishkaArchivesPage />} />
-                <Route path="mishka/favorites" element={<LibraryPage />} />
-                
-                <Route path="mishka/settings" element={<MishkahSettings />} />
                 <Route path="surah/:number" element={<SurahReader />} />
                 <Route path="playlists" element={<PlaylistsPage />} />
                 <Route path="playlist/:id" element={<PlaylistDetailPage />} />
                 <Route path="player" element={<NowPlayingPage />} />
                 <Route path="guidance" element={<GuidancePage />} />
-                <Route path="quotes" element={<QuotesPage />} />
-                <Route path="stories" element={<StoriesPage />} />
+                <Route path="quotes" element={<Navigate to="/guidance?tab=sayings" replace />} />
                 <Route path="favorites" element={<LegacyFavoritesRedirect />} />
                 <Route path="bookmarks" element={<Navigate to="/library?tab=ayah&section=favorites" replace />} />
                 <Route path="progress" element={<ProgressPage />} />
@@ -124,7 +106,6 @@ export default function App() {
                 <Route path="profile" element={<ProfilePage />} />
                 <Route path="support" element={<SupportPage />} />
                 <Route path="diagnostics" element={<DiagnosticsPage />} />
-                <Route path="mishkah" element={<MishkahAssistantPage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Route>
             </Routes>
@@ -213,4 +194,3 @@ function ReminderHost() {
 
   return null;
 }
-

@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /* ============================================================
-   Manāra theme system
+   Furqan theme system
    All UI colours flow from CSS custom properties. Components
    must NOT hardcode colours — they use Tailwind utilities that
    reference the semantic tokens below, which switch by:
@@ -439,18 +439,6 @@ button {
 .safe-t {
   padding-top: env(safe-area-inset-top, 0px);
 }
-.switch-apps-tooltip {
-  opacity: 0;
-  visibility: hidden;
-  transform: translateY(-2px);
-  transition: opacity 140ms ease, transform 140ms ease, visibility 140ms;
-}
-.switch-apps-button:hover .switch-apps-tooltip,
-.switch-apps-button:focus-visible .switch-apps-tooltip {
-  opacity: 1;
-  visibility: visible;
-  transform: translateY(0);
-}
 .reader-app-shell,
 .reader-viewport {
   width: 100%;
@@ -484,7 +472,7 @@ button {
   bottom: calc(92px + env(safe-area-inset-bottom, 0px));
 }
 .reader-viewport {
-  padding-bottom: calc(7rem + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
 }
 @media (max-width: 767px) {
   .reader-hud-position {

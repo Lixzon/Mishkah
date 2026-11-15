@@ -98,6 +98,7 @@ export default function SettingsPage() {
   );
   const [pendingBackup, setPendingBackup] = useState<FurqanBackup | null>(null);
   const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
+  const mishkahUrl = (import.meta.env.VITE_MISHKAH_URL?.trim() || 'https://lixzon.github.io/Mishkah').replace(/\/+$/, '');
 
   const streak = progress.progression.currentStreak;
   const readingThemesUnlocked = isReadingThemesUnlocked(streak);
@@ -123,7 +124,7 @@ export default function SettingsPage() {
       link.download = `furqan-backup-${new Date().toISOString().slice(0, 10)}.json`;
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-      dispatch(push('Your Manāra backup is ready.', 'success'));
+      dispatch(push('Your Furqan backup is ready.', 'success'));
     } catch {
       dispatch(push('Could not create a backup file.', 'error'));
     }
@@ -178,6 +179,11 @@ export default function SettingsPage() {
       window.removeEventListener('appinstalled', onInstalled);
     };
   }, []);
+
+  const openMishkah = () => {
+    if (!window.confirm('Open Mishkah for prayer, fasting, and daily worship?')) return;
+    window.location.assign(`${mishkahUrl}/`);
+  };
 
   return (
     <div className="page-enter">
@@ -783,7 +789,7 @@ export default function SettingsPage() {
       <Section title="Reminders" icon="clock" />
       <Card>
         <p className="mb-3 text-xs leading-relaxed text-mut">
-          Reminders are optional. Enabling one asks your browser for permission and shows the reminder while Manāra is available. The in-app check-in remains available when background notifications are limited.
+          Reminders are optional. Enabling one asks your browser for permission and shows the reminder while Furqan is available. The in-app check-in remains available when background notifications are limited.
         </p>
         <Row label="Daily Qur’an check-in" control={<Toggle checked={settings.notifications.daily} onChange={(v) => void toggleNotification('daily', v)} label="Daily Qur’an check-in" />} />
         <Row label="Friday · Surah Al-Kahf" control={<Toggle checked={settings.notifications.fridayKahf} onChange={(v) => void toggleNotification('fridayKahf', v)} label="Friday Surah Al-Kahf reminder" />} />
@@ -947,7 +953,7 @@ export default function SettingsPage() {
       <Section title="Data" icon="settings" />
       <Card>
         <p className="mb-3 text-xs leading-relaxed text-mut">
-          Keep a copy in case you get a new phone or reinstall Manāra. Downloaded audio is not included and can be saved again.
+          Keep a copy in case you get a new phone or reinstall Furqan. Downloaded audio is not included and can be saved again.
         </p>
         <div className="mb-3 flex flex-wrap gap-2">
           <button
@@ -1000,7 +1006,7 @@ export default function SettingsPage() {
       </Card>
 
       {/* ---- Support ---- */}
-      <Section title="Support Manāra & LIXZON" icon="heart" />
+      <Section title="Support Furqan & LIXZON" icon="heart" />
       <Card>
         <button
           type="button"
@@ -1011,7 +1017,7 @@ export default function SettingsPage() {
             <Icon name="heart" size={18} />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block text-sm font-semibold text-ink">Support Manāra & LIXZON</span>
+            <span className="block text-sm font-semibold text-ink">Support Furqan & LIXZON</span>
             <span className="block text-xs text-mut">Direct transfer · card checkout · Play billing</span>
           </span>
           <Icon name="chevronRight" size={18} className="text-mut" />
@@ -1023,15 +1029,15 @@ export default function SettingsPage() {
       <Card>
         <button
           type="button"
-          onClick={() => navigate('/mishkah')}
+          onClick={openMishkah}
           className="flex w-full items-center gap-3 rounded-xl px-1 py-2 text-left pressable"
         >
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent/12 text-accent">
-            <Icon name="book" size={18} />
+            <Icon name="sun" size={18} />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block text-sm font-semibold text-ink">Rafiq · offline app guide</span>
-            <span className="block text-xs text-mut">Find app features and read reviewed guidance answers</span>
+            <span className="block text-sm font-semibold text-ink">Open Mishkah</span>
+            <span className="block text-xs text-mut">Prayer, fasting, and daily worship</span>
           </span>
           <Icon name="chevronRight" size={18} className="text-mut" />
         </button>

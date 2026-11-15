@@ -54,8 +54,7 @@ export type IconName =
   | 'snowflake'
   | 'lock'
   | 'unlock'
-  | 'user'
-  | 'users';
+  | 'user';
 
 const S = (props: { children: ReactElement[] | ReactElement; fill?: boolean }) => (
   <g fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">
@@ -372,12 +371,6 @@ const ICONS: Record<IconName, ReactElement> = {
     <S>
       <circle cx="12" cy="8" r="4" />
       <path d="M4 21a8 8 0 0 1 16 0" />
-    </S>
-  ),
-  users: (
-    <S>
-      <circle cx="9" cy="8" r="3.2" />
-      <path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 5.2a3.2 3.2 0 0 1 0 6.2M17 14a5.6 5.6 0 0 1 4.5 5.5" />
     </S>
   ),
 };

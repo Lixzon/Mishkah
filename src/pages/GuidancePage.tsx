@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
   EVERYDAY_MOMENTS,
   GUIDANCE_CATEGORIES,
@@ -116,22 +116,6 @@ export default function GuidancePage() {
   return (
     <div className="page-enter">
       <PageHeader title="Guidance" subtitle="Practical Prophetic habits, everyday du’as, and Qur’an readings—with sources to check." />
-      <div className="mb-4 grid gap-2 sm:grid-cols-2">
-        <Link to="/quotes?view=sayings" className="group rounded-2xl border border-line bg-surface p-3 transition hover:border-accent/35 hover:shadow-card">
-          <span className="text-[9px] font-semibold uppercase tracking-[0.15em] text-accent">WORDS TO REFLECT ON</span>
-          <span className="mt-1 flex items-center justify-between gap-2 text-sm font-semibold text-ink">
-            Sayings, Hadith & Du’as <span className="text-accent transition group-hover:translate-x-0.5">›</span>
-          </span>
-          <span className="mt-1 block text-[11px] text-mut">Save a favourite or share a designed card.</span>
-        </Link>
-        <Link to="/stories" className="group rounded-2xl border border-line bg-surface p-3 transition hover:border-accent/35 hover:shadow-card">
-          <span className="text-[9px] font-semibold uppercase tracking-[0.15em] text-accent">THE ARCHIVE</span>
-          <span className="mt-1 flex items-center justify-between gap-2 text-sm font-semibold text-ink">
-            Stories & history <span className="text-accent transition group-hover:translate-x-0.5">›</span>
-          </span>
-          <span className="mt-1 block text-[11px] text-mut">Share a short introduction with a link to read more.</span>
-        </Link>
-      </div>
       <div className="mb-4 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap" role="group" aria-label="Guidance sections">
         {VIEWS.map((item) => {
           const active = item.value === view;

@@ -1,38 +1,23 @@
-# Manāra Supabase setup
+# Furqan cloud backup setup
 
-Manāra uses one Supabase client for optional account-based cloud backup. Quran
-reading progress, bookmarks, memorization, streaks, fasting records, and daily
-reflections share the app's local store; cloud backups serialize that same
-state into one Manāra backup per account.
+Furqan and Mishkah are independent apps. They do not sync Quran progress, daily verses, or app data with each other. Each app contains the same deterministic UTC Quran schedule locally: verses are selected without repeats in any 366-day period, and Friday selections come from Surah Al-Kahf. Daily Quran journey selections use the same date-based schedule in both apps. The verse schedule is duplicated in each app rather than fetched from or coordinated by the other.
 
-## Configure the app
+The apps can link to one another, but opening the sibling app requires user confirmation. Mishkah loads verse text from the independent AlQuran Cloud API; this does not depend on Furqan or a Manara deployment.
 
-1. Configure `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in `.env.local`
-   for local development.
-2. Set the same variables in the production host's build environment, then
-   redeploy. Use a Supabase publishable key (or legacy anon key); never expose a
-   `service_role` key in a client app.
-3. Apply the migrations in `supabase/migrations` in timestamp order. The
-   historical pairing migrations are no-ops; the final Manāra migration
-   removes the retired sync tables and functions and migrates existing Furqan
-   cloud backups into the Manāra backup row.
-4. Enable Supabase Auth's Email provider and configure the email template to
-   include the one-time token as `{{ .Token }}`. The app verifies the code
-   in-app; no magic-link redirect URL is required.
+## Configure Furqan backups
 
-The backup table uses row-level security so authenticated accounts can access
-only their own rows. If the Vite environment variables are not configured,
-local progress and file export/import continue to work; cloud backup is
-unavailable.
+1. Configure a Supabase project for Furqan.
+2. Apply the user-backup migration: `supabase/migrations/20261110120000_lixzon_user_backups.sql`.
+3. Enable Supabase Auth's Email provider and configure the email template to include the one-time token as `{{ .Token }}`.
+4. Copy `.env.example` to `.env.local` and set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
+5. Set the same values in Furqan's hosting provider build environment if cloud backup is needed there.
 
-## Cloud backup
+Use only a Supabase publishable key (or legacy anon key) in the client. Never ship a `service_role` key. The backup table is protected by row-level security; each authenticated account can access only its own backup.
 
-Sign in from Settings using a one-time email code. Backups include reading
-progress, bookmarks, memorization, likes, playlists, theme, settings, fasting
-records, and daily reflections. Authentication tokens and downloaded media are
-not included.
+## Email cloud backup
 
-On a new device with an existing backup, explicitly restore it or replace the
-cloud copy with the data on this device. Saved changes are backed up
-automatically after the first backup or restore. Backups are limited to 1 MB;
-file export/import remains available for larger archives.
+Sign in from Furqan Settings using a one-time email code. Furqan stores its own backup, separate from Mishkah's backup. Restoring or replacing a backup requires confirmation. Automatic backup starts after the first backup or restore. Authentication tokens, audio downloads, and Quran text caches are not included. Cloud backups are limited to 1 MB; file export/import remains available for larger backups.
+
+## Legacy pairing migrations
+
+The `20261109130000_lixzon_pair_sync.sql` and `20261109210200_lixzon_revoke_pair.sql` migrations describe the retired app-pairing feature. Do not apply them to a new project. Existing deployments may still have the legacy pairing database objects, but these apps no longer read or write paired records. Removing old database objects and records requires a separate cleanup decision.

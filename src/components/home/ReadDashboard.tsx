@@ -12,6 +12,7 @@ import { ReadScene, type ReadSceneType } from './ReadScene';
 import { QURAN_GUIDANCE } from '../../data/quranGuidanceData';
 import { getDailyQuranJourney } from '../../data/dailyQuranJourney';
 import { dailyQhdTheme, type DailyQhdTheme } from '../../data/dailyQhdReminder';
+import { utcDateKey } from '../../data/quranSchedule';
 import type { AyahData } from '../../types';
 
 const HOME_PHOTO_VARIANT_KEY = 'furqan:home-photo-variant';
@@ -110,12 +111,15 @@ export function ReadDashboard() {
   const progress = useAppSelector((state) => state.progress);
   const settings = useAppSelector((state) => state.settings);
   const bookmarks = useAppSelector((state) => state.bookmarks.items);
-  const journey = getDailyQuranJourney();
-  const [dailyDateKey, setDailyDateKey] = useState(() => new Date().toISOString().slice(0, 10));
-  const dailyTheme = dailyQhdTheme(new Date(`${dailyDateKey}T12:00:00.000Z`));
+  const [dailyDateKey, setDailyDateKey] = useState(utcDateKey);
+  const scheduleDate = new Date(`${dailyDateKey}T12:00:00.000Z`);
+  const journey = getDailyQuranJourney(scheduleDate);
+  const dailyTheme = dailyQhdTheme(scheduleDate);
   const reflection = REFLECT_AND_ACT[dailyTheme.id];
   const weeklySurah = WEEKLY_SURAH_SPOTLIGHTS[weeklySpotlightIndex()];
   const weeklySurahName = surahs?.find((item) => item.number === weeklySurah.surah)?.englishName ?? weeklySurah.name;
+  const mishkahUrl = (import.meta.env.VITE_MISHKAH_URL?.trim() || 'https://lixzon.github.io/Mishkah').replace(/\/+$/, '');
+  const journeyStoryUrl = `${mishkahUrl}/?journeyStory=${encodeURIComponent(journey.id)}`;
   const [verse, setVerse] = useState<DailyVerse | null>(null);
   const [photoVariant, setPhotoVariant] = useState(initialPhotoVariant);
   const touchStartY = useRef<number | null>(null);
@@ -126,9 +130,13 @@ export function ReadDashboard() {
     : false;
 
   useEffect(() => {
-    const refreshDate = () => setDailyDateKey(new Date().toISOString().slice(0, 10));
+    const refreshDate = () => setDailyDateKey(utcDateKey());
+    window.addEventListener('focus', refreshDate);
     const interval = window.setInterval(refreshDate, 30_000);
-    return () => window.clearInterval(interval);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', refreshDate);
+    };
   }, []);
 
   useEffect(() => {
@@ -305,13 +313,17 @@ export function ReadDashboard() {
             <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-200">A short reflection</p>
             <p className="mt-1 text-sm leading-relaxed text-white/90">{journey.reflection}</p>
           </div>
-          <button
-            type="button"
-            onClick={() => navigate('/guidance?tab=readings')}
+          <a
+            href={journeyStoryUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(event) => {
+              if (!window.confirm('Open this daily Quran journey in Mishkah?')) event.preventDefault();
+            }}
             className="inline-flex min-h-10 items-center rounded-full bg-white px-4 py-2 text-xs font-semibold text-emerald-950 transition hover:bg-emerald-50"
           >
-            Explore Quran guidance
-          </button>
+            Read the long story in Mishkah ↗
+          </a>
         </div>
       </article>
 

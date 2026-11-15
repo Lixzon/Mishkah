@@ -30,7 +30,7 @@ function useToggle(liked: boolean, toggle: () => void, label: string): LikeToggl
   const dispatch = useAppDispatch();
   const onToggle = useCallback(() => {
     toggle();
-    dispatch(push(liked ? `Removed from Favorites · ${label}` : `Added to Favorites · ${label}`, liked ? 'info' : 'success'));
+    dispatch(push(liked ? `Removed from Favourites · ${label}` : `Added to Favourites · ${label}`, liked ? 'info' : 'success'));
   }, [dispatch, label, liked, toggle]);
   return { liked, toggle: onToggle };
 }

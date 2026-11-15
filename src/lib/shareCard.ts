@@ -12,32 +12,10 @@ export interface CardContent {
   ayahTo?: number;
   arabic: string;
   translation: string;
-  description?: string;
-}
-
-export type TextCardKind = 'hadith' | 'dua' | 'saying' | 'story' | 'archive';
-
-export interface TextCardContent {
-  kind: TextCardKind;
-  title: string;
-  body: string;
-  description?: string;
-  arabic?: string;
-  transliteration?: string;
-  byline?: string;
-  source?: string;
-  shareUrl: string;
 }
 
 export interface CardOptions {
   content: CardContent;
-  format: CardFormat;
-  preset: CardPresetId;
-  showBadge: boolean;
-}
-
-export interface TextCardOptions {
-  content: TextCardContent;
   format: CardFormat;
   preset: CardPresetId;
   showBadge: boolean;
@@ -570,34 +548,24 @@ export async function renderShareCard(options: CardOptions): Promise<HTMLCanvasE
   const minTranslation = Math.round(w * 0.017);
   const maxArabicLines = format === 'square' ? 12 : 18;
   const maxTranslationLines = format === 'square' ? 10 : 16;
-  const descriptionSize = Math.round(w * 0.019);
 
   let arabicSize = baseArabic;
   let translationSize = baseTranslation;
   let arabicLines: string[] = [];
   let translationLines: string[] = [];
-  let descriptionLines: string[] = [];
 
   search: for (let ts = baseTranslation; ts >= minTranslation; ts -= 1) {
     ctx.font = `500 ${ts}px ui-sans-serif, system-ui, sans-serif`;
     const lines = wrapText(ctx, content.translation, contentWidth * 0.94, maxTranslationLines);
     const translationHeight = lines.length * ts * 1.5;
-    ctx.font = `500 ${descriptionSize}px ui-sans-serif, system-ui, sans-serif`;
-    const summaryLines = content.description
-      ? wrapText(ctx, content.description, contentWidth * 0.9, format === 'square' ? 4 : 6)
-      : [];
-    const summaryHeight = summaryLines.length
-      ? summaryLines.length * descriptionSize * 1.45 + dividerGap
-      : 0;
     for (let as = baseArabic; as >= minArabic; as -= 2) {
       ctx.font = `600 ${as}px "Amiri Quran", "Scheherazade New", "Traditional Arabic", serif`;
       const aLines = wrapText(ctx, content.arabic, contentWidth, maxArabicLines);
-      if (aLines.length * as * 1.85 + translationHeight + summaryHeight + dividerSpace <= available) {
+      if (aLines.length * as * 1.85 + translationHeight + dividerSpace <= available) {
         arabicSize = as;
         translationSize = ts;
         arabicLines = aLines;
         translationLines = lines;
-        descriptionLines = summaryLines;
         break search;
       }
     }
@@ -611,21 +579,7 @@ export async function renderShareCard(options: CardOptions): Promise<HTMLCanvasE
     ctx.font = `600 ${arabicSize}px "Amiri Quran", "Scheherazade New", "Traditional Arabic", serif`;
     arabicLines = wrapText(ctx, content.arabic, contentWidth, maxArabicLines);
     const arabicHeight = arabicLines.length * arabicSize * 1.85;
-    ctx.font = `500 ${descriptionSize}px ui-sans-serif, system-ui, sans-serif`;
-    descriptionLines = content.description
-      ? wrapText(ctx, content.description, contentWidth * 0.9, format === 'square' ? 4 : 6)
-      : [];
-    let summaryHeight = descriptionLines.length
-      ? dividerGap + descriptionLines.length * descriptionSize * 1.45
-      : 0;
-    if (summaryHeight + translationSize * 1.5 > available - arabicHeight - dividerSpace) {
-      descriptionLines = [];
-      summaryHeight = 0;
-    }
-    const remaining = Math.max(
-      translationSize * 1.5,
-      available - arabicHeight - dividerSpace - summaryHeight,
-    );
+    const remaining = Math.max(translationSize * 1.5, available - arabicHeight - dividerSpace);
     const allowed = Math.max(1, Math.floor(remaining / (translationSize * 1.5)));
     ctx.font = `500 ${translationSize}px ui-sans-serif, system-ui, sans-serif`;
     translationLines = wrapText(ctx, content.translation, contentWidth * 0.94, allowed);
@@ -636,8 +590,7 @@ export async function renderShareCard(options: CardOptions): Promise<HTMLCanvasE
   const blockHeight =
     arabicLines.length * arabicLineHeight +
     dividerSpace +
-    translationLines.length * translationLineHeight +
-    (descriptionLines.length ? dividerGap + descriptionLines.length * descriptionSize * 1.45 : 0);
+    translationLines.length * translationLineHeight;
   let cursor = safeTop + Math.max(0, (available - blockHeight) / 2);
 
   ctx.font = `600 ${arabicSize}px "Amiri Quran", "Scheherazade New", "Traditional Arabic", serif`;
@@ -667,24 +620,18 @@ export async function renderShareCard(options: CardOptions): Promise<HTMLCanvasE
   ctx.direction = 'ltr';
   ctx.fillStyle = 'rgba(255,255,255,0.88)';
   ctx.font = `500 ${translationSize}px ui-sans-serif, system-ui, sans-serif`;
-  cursor = drawCenteredLines(ctx, translationLines, cx, cursor, translationLineHeight);
-  if (descriptionLines.length) {
-    cursor += dividerGap;
-    ctx.fillStyle = 'rgba(255,255,255,0.72)';
-    ctx.font = `500 ${descriptionSize}px ui-sans-serif, system-ui, sans-serif`;
-    drawCenteredLines(ctx, descriptionLines, cx, cursor, descriptionSize * 1.45);
-  }
+  drawCenteredLines(ctx, translationLines, cx, cursor, translationLineHeight);
 
   // Footer
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
   ctx.font = `600 ${footerSize}px ui-sans-serif, system-ui, sans-serif`;
   ctx.fillStyle = 'rgba(255,255,255,0.78)';
-  ctx.fillText(`مَنَارَة · MANĀRA`, cx, footerY - (showBadge ? footerSize * 1.25 : 0));
+  ctx.fillText(`الفرقان · FURQAN`, cx, footerY - (showBadge ? footerSize * 1.25 : 0));
   if (showBadge) {
     ctx.fillStyle = 'rgba(255,255,255,0.5)';
     ctx.font = `500 ${Math.round(footerSize * 0.86)}px ui-sans-serif, system-ui, sans-serif`;
-    ctx.fillText('Read on Manāra • by LIXZON', cx, footerY);
+    ctx.fillText('Read on Furqan • by LIXZON', cx, footerY);
   }
 
   return canvas;
@@ -728,164 +675,6 @@ export function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob | null> {
       resolve(null);
     }
   });
-}
-
-export async function renderTextShareCard(options: TextCardOptions): Promise<HTMLCanvasElement> {
-  await ensureFonts();
-
-  const { content, format, showBadge } = options;
-  const { width: w, height: h } = SIZE[format];
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('Canvas is not available on this device.');
-
-  const preset = presetById(options.preset);
-  if (preset.image) await drawPhotoCover(ctx, preset.image, w, h);
-  else preset.paint?.(ctx, w, h);
-
-  const scrim = ctx.createLinearGradient(0, 0, 0, h);
-  scrim.addColorStop(0, 'rgba(4,10,12,0.64)');
-  scrim.addColorStop(0.5, 'rgba(4,10,12,0.48)');
-  scrim.addColorStop(1, 'rgba(4,10,12,0.78)');
-  ctx.fillStyle = scrim;
-  ctx.fillRect(0, 0, w, h);
-
-  const pad = format === 'square' ? w * 0.085 : w * 0.095;
-  const cx = w / 2;
-  const contentWidth = w - pad * 2;
-  const headerSize = Math.round(w * 0.019);
-  const footerSize = Math.round(w * 0.02);
-  const safeTop = pad * 0.75 + headerSize + h * 0.035;
-  const footerY = h - pad * 0.58;
-  const safeBottom = footerY - (showBadge ? footerSize * 2.8 : footerSize * 1.8);
-  const available = safeBottom - safeTop;
-
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  ctx.fillStyle = 'rgba(255,255,255,0.76)';
-  ctx.font = `600 ${headerSize}px ui-sans-serif, system-ui, sans-serif`;
-  const eyebrow = {
-    hadith: 'MISHKA · HADITH',
-    dua: 'MISHKA · DU’A',
-    saying: 'MISHKA · SAYING',
-    story: 'MISHKA · STORY',
-    archive: 'MISHKA · ARCHIVE',
-  }[content.kind];
-  ctx.fillText(eyebrow, cx, pad * 0.72);
-
-  let titleSize = Math.round(w * 0.052);
-  let arabicSize = Math.round(w * 0.056);
-  let bodySize = Math.round(w * 0.033);
-  let descriptionSize = Math.round(w * 0.025);
-  let transliterationSize = Math.round(w * 0.023);
-  const titleMaxLines = 3;
-  const bodyMaxLines = format === 'square' ? 7 : 12;
-  const descriptionMaxLines = format === 'square' ? 4 : 7;
-  const arabicMaxLines = format === 'square' ? 4 : 7;
-  let titleLines: string[] = [];
-  let bodyLines: string[] = [];
-  let descriptionLines: string[] = [];
-  let arabicLines: string[] = [];
-  let transliterationLines: string[] = [];
-
-  const measure = () => {
-    ctx.direction = 'ltr';
-    ctx.font = `600 ${titleSize}px ui-serif, Georgia, serif`;
-    titleLines = wrapText(ctx, content.title, contentWidth, titleMaxLines);
-    ctx.font = `600 ${arabicSize}px "Amiri Quran", "Scheherazade New", "Traditional Arabic", serif`;
-    arabicLines = content.arabic ? wrapText(ctx, content.arabic, contentWidth, arabicMaxLines) : [];
-    ctx.font = `500 ${transliterationSize}px ui-sans-serif, system-ui, sans-serif`;
-    transliterationLines = content.transliteration
-      ? wrapText(ctx, content.transliteration, contentWidth * 0.94, 3)
-      : [];
-    ctx.font = `500 ${bodySize}px ui-sans-serif, system-ui, sans-serif`;
-    bodyLines = wrapText(ctx, content.body, contentWidth * 0.96, bodyMaxLines);
-    ctx.font = `500 ${descriptionSize}px ui-sans-serif, system-ui, sans-serif`;
-    descriptionLines = content.description
-      ? wrapText(ctx, content.description, contentWidth * 0.94, descriptionMaxLines)
-      : [];
-
-    return titleLines.length * titleSize * 1.3
-      + arabicLines.length * arabicSize * 1.8
-      + transliterationLines.length * transliterationSize * 1.5
-      + bodyLines.length * bodySize * 1.55
-      + descriptionLines.length * descriptionSize * 1.45
-      + Math.max(0, titleLines.length - 1) * 10
-      + Math.max(0, arabicLines.length) * 18
-      + Math.max(0, transliterationLines.length) * 12
-      + Math.max(0, descriptionLines.length) * 14
-      + (content.byline ? w * 0.055 : 0)
-      + (content.source ? w * 0.045 : 0);
-  };
-
-  while (measure() > available && bodySize > Math.round(w * 0.022)) {
-    bodySize -= 2;
-    descriptionSize = Math.max(Math.round(w * 0.018), descriptionSize - 1);
-    titleSize = Math.max(Math.round(w * 0.036), titleSize - 1);
-    arabicSize = Math.max(Math.round(w * 0.038), arabicSize - 1);
-  }
-  measure();
-
-  const blockHeight = measure();
-  let cursor = safeTop + Math.max(0, (available - blockHeight) / 2);
-  ctx.fillStyle = '#ffffff';
-  ctx.font = `600 ${titleSize}px ui-serif, Georgia, serif`;
-  cursor = drawCenteredLines(ctx, titleLines, cx, cursor, titleSize * 1.3) + w * 0.03;
-
-  if (arabicLines.length) {
-    ctx.direction = 'rtl';
-    ctx.font = `600 ${arabicSize}px "Amiri Quran", "Scheherazade New", "Traditional Arabic", serif`;
-    ctx.fillStyle = '#ffffff';
-    cursor = drawCenteredLines(ctx, arabicLines, cx, cursor, arabicSize * 1.8) + w * 0.018;
-  }
-
-  if (transliterationLines.length) {
-    ctx.direction = 'ltr';
-    ctx.font = `500 ${transliterationSize}px ui-sans-serif, system-ui, sans-serif`;
-    ctx.fillStyle = 'rgba(255,255,255,0.82)';
-    cursor = drawCenteredLines(ctx, transliterationLines, cx, cursor, transliterationSize * 1.5) + w * 0.022;
-  }
-
-  ctx.direction = 'ltr';
-  ctx.font = `500 ${bodySize}px ui-sans-serif, system-ui, sans-serif`;
-  ctx.fillStyle = 'rgba(255,255,255,0.95)';
-  cursor = drawCenteredLines(ctx, bodyLines, cx, cursor, bodySize * 1.55);
-
-  if (descriptionLines.length) {
-    cursor += w * 0.03;
-    ctx.font = `500 ${descriptionSize}px ui-sans-serif, system-ui, sans-serif`;
-    ctx.fillStyle = 'rgba(255,255,255,0.78)';
-    cursor = drawCenteredLines(ctx, descriptionLines, cx, cursor, descriptionSize * 1.45);
-  }
-
-  ctx.fillStyle = 'rgba(245,226,185,0.96)';
-  ctx.font = `600 ${Math.round(w * 0.024)}px ui-sans-serif, system-ui, sans-serif`;
-  if (content.byline) {
-    cursor += w * 0.045;
-    cursor = drawCenteredLines(ctx, wrapText(ctx, content.byline, contentWidth, 2), cx, cursor, w * 0.034);
-  }
-  if (content.source) {
-    cursor += w * 0.025;
-    ctx.font = `500 ${Math.round(w * 0.02)}px ui-sans-serif, system-ui, sans-serif`;
-    drawCenteredLines(ctx, wrapText(ctx, content.source, contentWidth * 0.94, 2), cx, cursor, w * 0.03);
-  }
-
-  ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = 'rgba(255,255,255,0.68)';
-  ctx.font = `600 ${footerSize}px ui-sans-serif, system-ui, sans-serif`;
-  ctx.fillText(showBadge ? 'MANĀRA · BY LIXZON' : 'MANĀRA', cx, footerY);
-  return canvas;
-}
-
-export function textCardFilename(content: TextCardContent, format: CardFormat): string {
-  const title = content.title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 48) || content.kind;
-  return `manara-${content.kind}-${title}-${format}.jpg`;
 }
 
 export function cardFilename(content: CardContent, format: CardFormat): string {

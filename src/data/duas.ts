@@ -19,15 +19,6 @@ export const DUA_THEME_LABELS: Record<DuaTheme, string> = {
   distress: 'Distress',
 };
 
-export const DUA_THEME_DESCRIPTIONS: Record<DuaTheme, string> = {
-  daily: 'A prayer to bring remembrance of Allah into everyday moments.',
-  home: 'A supplication for trust in Allah when entering or leaving home.',
-  food: 'A prayer of gratitude and remembrance before or after a meal.',
-  travel: 'A supplication for protection, ease, and a safe journey.',
-  worship: 'A prayer to seek sincerity and strength in worship.',
-  distress: 'A supplication for relief, patience, and reliance on Allah.',
-};
-
 export const DUA_THEMES: DuaTheme[] = ['daily', 'home', 'food', 'travel', 'worship', 'distress'];
 
 export const DUAS: DuaEntry[] = [

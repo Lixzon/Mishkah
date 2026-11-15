@@ -1,8 +1,8 @@
 import type { AccentId, DownloadQuality, Reciter, ScriptStyle } from '../types';
 
-export const APP_NAME = 'Manāra';
-export const APP_NAME_AR = 'منارة';
-export const APP_TAGLINE = 'A light for your Quran and daily spiritual journey.';
+export const APP_NAME = 'Furqan';
+export const APP_NAME_AR = 'الفرقان';
+export const APP_TAGLINE = 'The Seeker who carries the Light of Guidance across horizons.';
 export const APP_DEVELOPER = 'LIXZON';
 /** Quiet attribution shown on splash, settings, player and generated cards. */
 export const APP_ATTRIBUTION = 'by LIXZON';

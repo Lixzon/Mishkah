@@ -1,3 +1,5 @@
+import { getDailyQuranSchedule } from './quranSchedule';
+
 export interface DailyQhdTheme {
   id: string;
   title: string;
@@ -23,5 +25,11 @@ export function dailyQhdTheme(date = new Date()): DailyQhdTheme {
     (Date.UTC(year, date.getUTCMonth(), date.getUTCDate()) - startOfYear) / 86_400_000,
   );
   const index = ((dayOfYear % DAILY_QHD_THEMES.length) + DAILY_QHD_THEMES.length) % DAILY_QHD_THEMES.length;
-  return DAILY_QHD_THEMES[index];
+  const schedule = getDailyQuranSchedule(date);
+  return {
+    ...DAILY_QHD_THEMES[index],
+    globalAyah: schedule.globalAyah,
+    surah: schedule.surah,
+    ayah: schedule.ayah,
+  };
 }

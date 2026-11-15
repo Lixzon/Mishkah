@@ -11,12 +11,9 @@ import {
   canvasToBlob,
   cardFilename,
   renderShareCard,
-  renderTextShareCard,
-  textCardFilename,
   type CardContent,
   type CardFormat,
   type CardPresetId,
-  type TextCardContent,
 } from '../../lib/shareCard';
 
 const FORMATS: Array<{ id: CardFormat; label: string; hint: string }> = [
@@ -28,12 +25,10 @@ export function ShareCardModal({
   open,
   onClose,
   content,
-  onShared,
 }: {
   open: boolean;
   onClose: () => void;
-  content: CardContent | TextCardContent;
-  onShared?: () => void;
+  content: CardContent;
 }) {
   const dispatch = useAppDispatch();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -44,16 +39,7 @@ export function ShareCardModal({
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
 
-  const isVerseContent = 'surahNumber' in content;
-  const shareTitle = isVerseContent
-    ? `${content.surahName} ${content.ayahFrom} · Manāra`
-    : `${content.title} · Manāra`;
-  const shareLink = isVerseContent
-    ? verseDeepLink(content.surahNumber, content.ayahFrom)
-    : content.shareUrl;
-  const filename = isVerseContent
-    ? cardFilename(content, format)
-    : textCardFilename(content, format);
+  const { surahName, surahNumber, ayahFrom, ayahTo, arabic, translation } = content;
 
   useEffect(() => {
     if (!open) return;
@@ -61,10 +47,12 @@ export function ShareCardModal({
     setBusy(true);
     setFailed(false);
     blobRef.current = null;
-    const render = isVerseContent
-      ? renderShareCard({ content, format, preset, showBadge })
-      : renderTextShareCard({ content, format, preset, showBadge });
-    render
+    renderShareCard({
+      content: { surahName, surahNumber, ayahFrom, ayahTo, arabic, translation },
+      format,
+      preset,
+      showBadge,
+    })
       .then(async (rendered) => {
         if (cancelled) return;
         const preview = canvasRef.current;
@@ -73,9 +61,7 @@ export function ShareCardModal({
           preview.height = rendered.height;
           preview.getContext('2d')?.drawImage(rendered, 0, 0);
         }
-        const blob = await canvasToBlob(rendered);
-        if (!blob) throw new Error('The share card image could not be encoded.');
-        blobRef.current = blob;
+        blobRef.current = await canvasToBlob(rendered);
       })
       .catch(() => {
         if (!cancelled) setFailed(true);
@@ -86,13 +72,15 @@ export function ShareCardModal({
     return () => {
       cancelled = true;
     };
-  }, [open, content, isVerseContent, format, preset, showBadge]);
+  }, [open, surahName, surahNumber, ayahFrom, ayahTo, arabic, translation, format, preset, showBadge]);
+
+  const shareLink = verseDeepLink(surahNumber, ayahFrom);
 
   const download = (blob: Blob) => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = filename;
+    link.download = cardFilename(content, format);
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -102,37 +90,23 @@ export function ShareCardModal({
   const shareCard = async () => {
     const blob = blobRef.current;
     if (!blob) {
-      dispatch(push(failed ? 'The card could not be rendered. Try a different background.' : 'The card is still rendering. Try again in a moment.', failed ? 'error' : 'info'));
+      dispatch(push('The card is still rendering. Try again in a moment.', 'info'));
       return;
     }
+    const file = new File([blob], cardFilename(content, format), { type: 'image/jpeg' });
     const nav = navigator as Navigator & { canShare?: (data: ShareData) => boolean };
-    if (typeof navigator.share === 'function' && typeof File !== 'undefined') {
-      const file = new File([blob], filename, { type: 'image/jpeg' });
-      const payload: ShareData = {
-        title: shareTitle,
-        text: isVerseContent
-          ? [content.translation, content.description, shareLink, 'by LIXZON'].filter(Boolean).join('\n\n')
-          : [
-              content.arabic,
-              content.transliteration,
-              content.body,
-              content.description,
-              content.byline ? `— ${content.byline}` : '',
-              content.source ? `Source: ${content.source}` : '',
-              shareLink,
-              'by LIXZON',
-            ].filter(Boolean).join('\n\n'),
-        files: [file],
-      };
-      if (!nav.canShare || nav.canShare(payload)) {
-        try {
-          await navigator.share(payload);
-          dispatch(push('Card shared.', 'success'));
-          onShared?.();
-          return;
-        } catch (error) {
-          if (error instanceof DOMException && error.name === 'AbortError') return;
-        }
+    const payload: ShareData = {
+      title: `${surahName} ${ayahFrom} · Furqan`,
+      text: `${translation}\n\n${shareLink}\n\nby LIXZON`,
+      files: [file],
+    };
+    if (typeof navigator.share === 'function' && (!nav.canShare || nav.canShare(payload))) {
+      try {
+        await navigator.share(payload);
+        dispatch(push('Card shared.', 'success'));
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
       }
     }
     download(blob);
@@ -173,7 +147,7 @@ export function ShareCardModal({
         </div>
 
         <div>
-            <div className="mb-2 text-xs font-medium text-mut">Photo background · works offline</div>
+          <div className="mb-2 text-xs font-medium text-mut">Photo background · works offline</div>
           <div className="thin-scroll flex gap-2 overflow-x-auto pb-1">
             {CARD_PRESETS.map((option) => (
               <button
@@ -201,7 +175,7 @@ export function ShareCardModal({
         <div className="flex items-center justify-between gap-3 rounded-xl bg-surface2 px-3 py-2.5">
           <div className="min-w-0">
             <div className="text-xs font-semibold text-ink">Referral badge</div>
-            <div className="text-[11px] text-mut">“Read on Manāra • by LIXZON”</div>
+            <div className="text-[11px] text-mut">“Read on Furqan • by LIXZON”</div>
           </div>
           <Toggle checked={showBadge} onChange={setShowBadge} label="Show referral badge" />
         </div>
@@ -226,7 +200,7 @@ export function ShareCardModal({
           </button>
         </div>
         <p className="text-center text-[10px] leading-relaxed text-mut">
-          Photos are bundled with Manāra, so cards work offline. The link opens this item in Manāra.
+          Photos are bundled with Furqan, so cards work offline. Links open Furqan at this ayah.
         </p>
       </div>
     </Modal>

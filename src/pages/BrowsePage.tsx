@@ -13,6 +13,7 @@ import { useDownloadedSet } from '../services/useDownloads';
 import { todayKey } from '../lib/progression';
 import type { SurahMeta } from '../types';
 import { recommendationsForNow } from '../data/quranGuidanceData';
+import { ReadDashboard } from '../components/home/ReadDashboard';
 
 type Tab = 'surah' | 'juz';
 
@@ -125,12 +126,13 @@ export default function BrowsePage() {
 
   return (
     <div className="page-enter">
-      <PageHeader title="Furqan" subtitle="Read and listen to all 114 surahs." />
       <div className="mb-4 text-center">
         <div className="ar-uthmani text-2xl leading-relaxed text-ink" style={{ direction: 'rtl' }}>
           بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ
         </div>
       </div>
+
+      <ReadDashboard />
 
       <div className={`mb-4 rounded-2xl bg-gradient-to-br ${banner.accent} p-4 text-onaccent shadow-card`}>
         <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest opacity-90">

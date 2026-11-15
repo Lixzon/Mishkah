@@ -1,3 +1,5 @@
+import { getDailyQuranSchedule } from './quranSchedule';
+
 export interface JourneyPassage {
   surah: number;
   from: number;
@@ -87,7 +89,7 @@ export const DAILY_QURAN_JOURNEY: readonly DailyQuranJourney[] = [
 ];
 
 export function getDailyQuranJourney(date = new Date()): DailyQuranJourney {
-  const utcDay = Math.floor(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) / 86_400_000);
-  const index = ((utcDay % DAILY_QURAN_JOURNEY.length) + DAILY_QURAN_JOURNEY.length) % DAILY_QURAN_JOURNEY.length;
-  return DAILY_QURAN_JOURNEY[index];
+  const journey = DAILY_QURAN_JOURNEY.find((entry) => entry.id === getDailyQuranSchedule(date).journeyId);
+  if (!journey) throw new Error('The selected daily Quran journey is missing.');
+  return journey;
 }

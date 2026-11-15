@@ -6,8 +6,6 @@ import type { BookmarksState } from '../store/slices/bookmarksSlice';
 import { restoreBookmarks } from '../store/slices/bookmarksSlice';
 import type { MemorizedState } from '../store/slices/memorizedSlice';
 import { restoreMemorized } from '../store/slices/memorizedSlice';
-import type { GuidanceState } from '../store/slices/guidanceSlice';
-import { restoreGuidance } from '../store/slices/guidanceSlice';
 import { restoreProgress } from '../store/slices/progressSlice';
 import { restoreSettings } from '../store/slices/settingsSlice';
 import { restoreTheme } from '../store/slices/themeSlice';
@@ -31,7 +29,6 @@ export interface FurqanBackup {
     likes: LikesState;
     bookmarks: BookmarksState;
     memorized: MemorizedState;
-    guidance?: GuidanceState;
   };
 }
 
@@ -120,10 +117,8 @@ function isLikes(value: unknown): value is LikesState {
       Number(item.surah) >= 1 && Number(item.surah) <= 114 && Number.isInteger(item.ayah) &&
       typeof item.surahName === 'string' && typeof item.arabic === 'string' &&
       typeof item.translation === 'string' && isFiniteNumber(item.likedAt)) &&
-    (value.hadiths === undefined || (Array.isArray(value.hadiths) && value.hadiths.every((id) => typeof id === 'string'))) &&
     Array.isArray(value.duas) && value.duas.every((id) => typeof id === 'string') &&
-    Array.isArray(value.quotes) && value.quotes.every((id) => typeof id === 'string') &&
-    (value.stories === undefined || (Array.isArray(value.stories) && value.stories.every((id) => typeof id === 'string')));
+    Array.isArray(value.quotes) && value.quotes.every((id) => typeof id === 'string');
 }
 
 /** Validator for the retired `favorites` list, migrated into likes on restore. */
@@ -150,21 +145,12 @@ function isMemorized(value: unknown): value is MemorizedState {
     typeof item.memorized === 'boolean' && isFiniteNumber(item.updatedAt));
 }
 
-function isGuidance(value: unknown): value is GuidanceState {
-  return isRecord(value) &&
-    isRecord(value.fastingDays) &&
-    Object.values(value.fastingDays).every((fasted) => fasted === true) &&
-    isRecord(value.reflections) &&
-    Object.values(value.reflections).every((reflection) =>
-      typeof reflection === 'string' && reflection.length <= 2000);
-}
-
 export function createBackupJson(): string {
-  const { theme, settings, progress, playlists, likes, bookmarks, memorized, guidance } = store.getState();
+  const { theme, settings, progress, playlists, likes, bookmarks, memorized } = store.getState();
   const backup: FurqanBackup = {
     version: 1,
     exportedAt: new Date().toISOString(),
-    data: { theme, settings, progress, playlists, likes, bookmarks, memorized, guidance },
+    data: { theme, settings, progress, playlists, likes, bookmarks, memorized },
   };
   return JSON.stringify(backup, null, 2);
 }
@@ -181,27 +167,19 @@ export function parseBackupJson(text: string): FurqanBackup {
       !isTheme(value.data.theme) || !isSettings(value.data.settings) ||
       !isProgress(value.data.progress) || !isPlaylists(value.data.playlists) ||
       !isBookmarks(value.data.bookmarks) ||
-      (value.data.memorized !== undefined && !isMemorized(value.data.memorized)) ||
-      (value.data.guidance !== undefined && !isGuidance(value.data.guidance))) {
-    throw new Error('This file is not a valid Manāra backup.');
+      (value.data.memorized !== undefined && !isMemorized(value.data.memorized))) {
+    throw new Error('This file is not a valid Furqan backup.');
   }
 
   const legacy = isLegacyFavorites(value.data.favorites) ? value.data.favorites : null;
   if (!isLikes(value.data.likes) && !legacy) {
-    throw new Error('This file is not a valid Manāra backup.');
+    throw new Error('This file is not a valid Furqan backup.');
   }
 
   const backup = value as unknown as FurqanBackup;
   const normalizedBackup: FurqanBackup = {
     ...backup,
-    data: {
-      ...backup.data,
-      likes: isLikes(value.data.likes)
-        ? { ...value.data.likes, hadiths: value.data.likes.hadiths ?? [], stories: value.data.likes.stories ?? [] }
-        : backup.data.likes,
-      memorized: isMemorized(value.data.memorized) ? value.data.memorized : { items: [] },
-      guidance: isGuidance(value.data.guidance) ? value.data.guidance : { fastingDays: {}, reflections: {} },
-    },
+    data: { ...backup.data, memorized: isMemorized(value.data.memorized) ? value.data.memorized : { items: [] } },
   };
   if (isLikes(value.data.likes)) return normalizedBackup;
 
@@ -209,13 +187,12 @@ export function parseBackupJson(text: string): FurqanBackup {
   const migrated = migrateLegacyFavoriteIds(legacy?.items ?? []);
   return {
     ...normalizedBackup,
-    data: { ...normalizedBackup.data, likes: { surahs: [], ayahs: [], hadiths: [], duas: migrated.duas, quotes: migrated.quotes, stories: [] } },
+    data: { ...normalizedBackup.data, likes: { surahs: [], ayahs: [], duas: migrated.duas, quotes: migrated.quotes } },
   };
 }
 
 export function restoreBackup(backup: FurqanBackup): void {
   const { theme, settings, progress, playlists, likes, bookmarks, memorized } = backup.data;
-  const guidance = backup.data.guidance ?? { fastingDays: {}, reflections: {} };
   store.dispatch(restoreTheme(theme));
   store.dispatch(restoreSettings(settings));
   store.dispatch(restoreProgress(progress));
@@ -223,7 +200,6 @@ export function restoreBackup(backup: FurqanBackup): void {
   store.dispatch(restoreLikes(likes));
   store.dispatch(restoreBookmarks(bookmarks));
   store.dispatch(restoreMemorized(memorized));
-  store.dispatch(restoreGuidance(guidance));
 
   saveState(KEYS.theme, theme);
   saveState(KEYS.settings, settings);
@@ -232,5 +208,4 @@ export function restoreBackup(backup: FurqanBackup): void {
   saveState(KEYS.likes, likes);
   saveState(KEYS.bookmarks, bookmarks);
   saveState(KEYS.memorized, memorized);
-  saveState(KEYS.guidance, guidance);
 }

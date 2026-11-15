@@ -8,7 +8,6 @@ import { useAppDispatch } from '../store';
 import { recordMemorizationRepetition, toggleMemorizedAyah } from '../store/slices/memorizedSlice';
 import type { QuranVerseInsight } from '../data/quranInsightsData';
 import { wordGloss } from '../data/quranWordGlosses';
-import { useSectionSwitcher } from '../shared/SectionSwitcher';
 
 export function VerseActionModal({
   open,
@@ -48,7 +47,6 @@ export function VerseActionModal({
   wordByWordEnabled?: boolean;
 }) {
   const dispatch = useAppDispatch();
-  const { requestSwitch } = useSectionSwitcher();
   const [repeatCount, setRepeatCount] = useState(3);
   const [shareOpen, setShareOpen] = useState(false);
   const recordRepetition = () => dispatch(recordMemorizationRepetition({
@@ -182,20 +180,6 @@ export function VerseActionModal({
             <p className="text-[10px] leading-relaxed text-mut">{insight.source}. Summarized for study; consult the cited tafsir for detail.</p>
           </section>
         )}
-        {surahNumber === 2 && ayahNumber === 255 ? (
-          <button
-            type="button"
-            onClick={() => requestSwitch(
-              'mishka',
-              '/mishka/guidance?topic=ayat-al-kursi',
-              'Do you want to switch to Mishka to view this reflection?',
-            )}
-            className="mt-4 flex w-full items-center justify-between gap-3 rounded-2xl border border-accent/25 bg-accent/8 p-3 text-left text-sm font-semibold text-accent transition hover:bg-accent/12"
-          >
-            <span>Open Ayat al-Kursi in Mishka’s remembrance collection</span>
-            <Icon name="forward" size={17} />
-          </button>
-        ) : null}
       </div>
     </Modal>
     <ShareCardModal
@@ -207,7 +191,6 @@ export function VerseActionModal({
         ayahFrom: ayahNumber,
         arabic,
         translation,
-        description: insight?.tafsirSummary ?? `A reflection from ${surahName}, ayah ${ayahNumber}.`,
       }}
     />
     </>

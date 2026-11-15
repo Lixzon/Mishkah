@@ -4,10 +4,8 @@ import { PageHeader } from '../components/ui/common';
 import { Icon } from '../components/ui/Icon';
 import { totalLikedItems } from '../store/slices/likesSlice';
 import { ProfileAvatar } from '../components/ui/ProfileAvatar';
+
 export default function ProfilePage() {
-
-
-  
   const navigate = useNavigate();
   const progress = useAppSelector((s) => s.progress);
   const settings = useAppSelector((s) => s.settings);
@@ -136,4 +134,3 @@ function InfoCard({ title, value, subtitle, icon }: { title: string; value: stri
     </div>
   );
 }
-

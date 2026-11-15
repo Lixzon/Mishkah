@@ -4,7 +4,7 @@ import { PageHeader } from '../components/ui/common';
 import { Icon } from '../components/ui/Icon';
 import { Chip } from '../components/ui/controls';
 import { QUOTES, QUOTE_THEMES, QUOTE_THEME_LABELS, quoteOfTheDayIndex } from '../data/quotes';
-import { DUA_THEMES, DUA_THEME_DESCRIPTIONS, DUA_THEME_LABELS, DUAS, type DuaEntry, type DuaTheme } from '../data/duas';
+import { DUA_THEMES, DUA_THEME_LABELS, DUAS, type DuaEntry, type DuaTheme } from '../data/duas';
 import { useAppDispatch, useAppSelector } from '../store';
 import {
   isDuaLiked,
@@ -14,11 +14,9 @@ import {
 } from '../store/slices/likesSlice';
 import { push } from '../store/slices/toastSlice';
 import type { QuoteEntry, QuoteTheme } from '../types';
-import { recordQuoteView, recordXpAction } from '../store/slices/progressSlice';
+import { recordQuoteView } from '../store/slices/progressSlice';
 import { Segmented } from '../components/ui/controls';
 import { Modal } from '../components/ui/Modal';
-import { ShareCardModal } from '../components/share/ShareCardModal';
-import type { TextCardContent } from '../lib/shareCard';
 
 type View = 'sayings' | 'duas';
 type Filter = 'all' | 'liked' | QuoteTheme | DuaTheme;
@@ -27,12 +25,11 @@ type FocusedItem = { kind: 'saying'; entry: QuoteEntry } | { kind: 'dua'; entry:
 export default function QuotesPage() {
   const dispatch = useAppDispatch();
   const likes = useAppSelector((s) => s.likes);
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const [view, setView] = useState<View>(() => (searchParams.get('view') === 'duas' ? 'duas' : 'sayings'));
   const [filter, setFilter] = useState<Filter>('all');
   const [featuredIdx, setFeaturedIdx] = useState(() => quoteOfTheDayIndex(new Date()));
   const [focused, setFocused] = useState<FocusedItem | null>(null);
-  const [shareContent, setShareContent] = useState<TextCardContent | null>(null);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
 
   const featured = QUOTES[featuredIdx] ?? QUOTES[0];
@@ -41,15 +38,6 @@ export default function QuotesPage() {
   useEffect(() => {
     const nextView = searchParams.get('view') === 'duas' ? 'duas' : 'sayings';
     setView((current) => (current === nextView ? current : nextView));
-    const sharedId = searchParams.get('id');
-    if (!sharedId) return;
-    if (nextView === 'duas') {
-      const dua = DUAS.find((item) => item.id === sharedId);
-      if (dua) setFocused({ kind: 'dua', entry: dua });
-    } else {
-      const quote = QUOTES.find((item) => item.id === sharedId);
-      if (quote) setFocused({ kind: 'saying', entry: quote });
-    }
   }, [searchParams]);
 
   useEffect(() => {
@@ -103,41 +91,6 @@ export default function QuotesPage() {
 
   const copySaying = (quote: QuoteEntry) => copy(`${quote.text}\n— ${quote.by} (${quote.source})`);
   const copyDua = (dua: DuaEntry) => copy(`${dua.arabic}\n${dua.transliteration}\n${dua.translation}\n— ${dua.source}`);
-  const makeShareUrl = (query: string) => new URL(`${import.meta.env.BASE_URL}quotes?${query}`, window.location.origin).toString();
-  const shareSaying = (quote: QuoteEntry) => setShareContent({
-    kind: 'saying',
-    title: 'A saying to carry with you',
-    body: `“${quote.text}”`,
-    description: `A reminder about ${quote.themes.map((theme) => QUOTE_THEME_LABELS[theme].toLowerCase()).join(' and ')}.`,
-    byline: quote.by,
-    source: quote.source,
-    shareUrl: makeShareUrl(`view=sayings&id=${encodeURIComponent(quote.id)}`),
-  });
-  const shareDua = (dua: DuaEntry) => setShareContent({
-    kind: 'dua',
-    title: dua.title,
-    body: dua.translation,
-    description: DUA_THEME_DESCRIPTIONS[dua.theme],
-    arabic: dua.arabic,
-    transliteration: dua.transliteration,
-    source: dua.source,
-    shareUrl: makeShareUrl(`view=duas&id=${encodeURIComponent(dua.id)}`),
-  });
-  const openFocused = (item: FocusedItem) => {
-    setFocused(item);
-    const next = new URLSearchParams(searchParams);
-    next.set('view', item.kind === 'dua' ? 'duas' : 'sayings');
-    next.set('id', item.entry.id);
-    setSearchParams(next, { replace: true });
-  };
-  const closeFocused = () => {
-    setFocused(null);
-    if (searchParams.has('id')) {
-      const next = new URLSearchParams(searchParams);
-      next.delete('id');
-      setSearchParams(next, { replace: true });
-    }
-  };
   const isLiked = (item: FocusedItem) => item.kind === 'saying' ? isQuoteLiked(likes, item.entry.id) : isDuaLiked(likes, item.entry.id);
   const toggleLiked = (item: FocusedItem) => {
     if (item.kind === 'saying') dispatch(toggleLikedQuote(item.entry.id));
@@ -180,7 +133,7 @@ export default function QuotesPage() {
             <Icon name="quote" size={14} />
             Quote of the day
           </div>
-          <button type="button" onClick={() => openFocused({ kind: 'saying', entry: featured })} className="mt-3 block text-left text-lg font-medium leading-relaxed">
+          <button type="button" onClick={() => setFocused({ kind: 'saying', entry: featured })} className="mt-3 block text-left text-lg font-medium leading-relaxed">
             “{featured.text}”
           </button>
           <div className="mt-3 text-sm opacity-95">
@@ -194,9 +147,6 @@ export default function QuotesPage() {
             </button>
             <button type="button" onClick={() => toggleLiked({ kind: 'saying', entry: featured })} aria-label={isLiked({ kind: 'saying', entry: featured }) ? 'Unlike saying' : 'Like saying'} aria-pressed={isLiked({ kind: 'saying', entry: featured })} className="rounded-full bg-white/20 p-2 pressable">
               <Icon name="heart" size={16} className={isLiked({ kind: 'saying', entry: featured }) ? 'heart-pop heart-filled' : 'heart-outline'} />
-            </button>
-            <button type="button" onClick={() => shareSaying(featured)} aria-label="Share saying" className="rounded-full bg-white/20 p-2 pressable">
-              <Icon name="share" size={16} />
             </button>
           </div>
         </div>
@@ -244,7 +194,7 @@ export default function QuotesPage() {
           const liked = isLiked(item);
           return (
             <article key={quote.id} className="rounded-2xl bg-surface p-4">
-              <button type="button" onClick={() => openFocused(item)} className="flex w-full gap-2 text-left text-gold">
+              <button type="button" onClick={() => setFocused(item)} className="flex w-full gap-2 text-left text-gold">
                 <Icon name="quote" size={18} className="shrink-0 opacity-70" />
                 <span className="text-[15px] leading-relaxed text-ink">“{quote.text}”</span>
               </button>
@@ -258,7 +208,6 @@ export default function QuotesPage() {
                   <SpeechActions onEnglish={() => speak(quote.text, 'en')} compact />
                   <button type="button" aria-label="Copy saying" title="Copy saying" onClick={() => void copySaying(quote)} className="rounded-full p-2 text-mut hover:bg-surface2 hover:text-ink"><Icon name="clipboard" size={17} /></button>
                   <button type="button" aria-label={liked ? 'Unlike saying' : 'Like saying'} title={liked ? 'Unlike' : 'Like'} aria-pressed={liked} onClick={() => toggleLiked(item)} className={`rounded-full p-2 ${liked ? 'text-accent' : 'text-mut hover:bg-surface2 hover:text-accent'}`}><Icon name="heart" size={17} className={liked ? 'heart-pop heart-filled' : 'heart-outline'} /></button>
-                  <button type="button" aria-label="Share saying" title="Share saying" onClick={() => shareSaying(quote)} className="rounded-full p-2 text-mut hover:bg-surface2 hover:text-accent"><Icon name="share" size={17} /></button>
                 </div>
               </div>
             </article>
@@ -269,7 +218,7 @@ export default function QuotesPage() {
           const liked = isLiked(item);
           return (
             <article key={dua.id} className="rounded-2xl bg-surface p-4">
-              <button type="button" onClick={() => openFocused(item)} className="w-full text-left">
+              <button type="button" onClick={() => setFocused(item)} className="w-full text-left">
                 <div className="flex items-start justify-between gap-3">
                   <span className="text-sm font-semibold text-ink">{dua.title}</span>
                   <Chip tone="accent">{DUA_THEME_LABELS[dua.theme]}</Chip>
@@ -283,14 +232,13 @@ export default function QuotesPage() {
                 <SpeechActions onEnglish={() => speak(dua.translation, 'en')} onArabic={hasArabicVoice ? () => speak(dua.arabic, 'ar') : undefined} compact />
                 <button type="button" aria-label="Copy dua" title="Copy dua" onClick={() => void copyDua(dua)} className="rounded-full p-2 text-mut hover:bg-surface2 hover:text-ink"><Icon name="clipboard" size={17} /></button>
                 <button type="button" aria-label={liked ? 'Unlike dua' : 'Like dua'} title={liked ? 'Unlike' : 'Like'} aria-pressed={liked} onClick={() => toggleLiked(item)} className={`rounded-full p-2 ${liked ? 'text-accent' : 'text-mut hover:bg-surface2 hover:text-accent'}`}><Icon name="heart" size={17} className={liked ? 'heart-pop heart-filled' : 'heart-outline'} /></button>
-                <button type="button" aria-label="Share dua" title="Share dua" onClick={() => shareDua(dua)} className="rounded-full p-2 text-mut hover:bg-surface2 hover:text-accent"><Icon name="share" size={17} /></button>
               </div>
             </article>
           );
         })}
       </div>
 
-      <Modal open={focused !== null} onClose={closeFocused} title={focused?.kind === 'dua' ? focused.entry.title : 'Focused reading'} size="md" variant="frosted">
+      <Modal open={focused !== null} onClose={() => setFocused(null)} title={focused?.kind === 'dua' ? focused.entry.title : 'Focused reading'} size="md" variant="frosted">
         {focused?.kind === 'saying' && (
           <div className="py-3">
             <p className="text-xl font-medium leading-relaxed text-ink">“{focused.entry.text}”</p>
@@ -300,7 +248,6 @@ export default function QuotesPage() {
               <SpeechActions onEnglish={() => speak(focused.entry.text, 'en')} />
               <button type="button" onClick={() => void copySaying(focused.entry)} className="rounded-full bg-surface2 p-2 text-mut" aria-label="Copy saying"><Icon name="clipboard" size={17} /></button>
               <button type="button" onClick={() => toggleLiked(focused)} className="rounded-full bg-surface2 p-2 text-mut" aria-label={isLiked(focused) ? 'Unlike saying' : 'Like saying'}><Icon name="heart" size={17} className={isLiked(focused) ? 'heart-pop heart-filled' : 'heart-outline'} /></button>
-              <button type="button" onClick={() => shareSaying(focused.entry)} className="rounded-full bg-surface2 p-2 text-mut" aria-label="Share saying"><Icon name="share" size={17} /></button>
             </div>
           </div>
         )}
@@ -314,19 +261,10 @@ export default function QuotesPage() {
               <SpeechActions onEnglish={() => speak(focused.entry.translation, 'en')} onArabic={hasArabicVoice ? () => speak(focused.entry.arabic, 'ar') : undefined} />
               <button type="button" onClick={() => void copyDua(focused.entry)} className="rounded-full bg-surface2 p-2 text-mut" aria-label="Copy dua"><Icon name="clipboard" size={17} /></button>
               <button type="button" onClick={() => toggleLiked(focused)} className="rounded-full bg-surface2 p-2 text-mut" aria-label={isLiked(focused) ? 'Unlike dua' : 'Like dua'}><Icon name="heart" size={17} className={isLiked(focused) ? 'heart-pop heart-filled' : 'heart-outline'} /></button>
-              <button type="button" onClick={() => shareDua(focused.entry)} className="rounded-full bg-surface2 p-2 text-mut" aria-label="Share dua"><Icon name="share" size={17} /></button>
             </div>
           </div>
         )}
       </Modal>
-      {shareContent ? (
-        <ShareCardModal
-          open
-          onClose={() => setShareContent(null)}
-          content={shareContent}
-          onShared={() => dispatch(recordXpAction({ kind: 'share' }))}
-        />
-      ) : null}
     </div>
   );
 }
