@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory=$true)][string]$File,
     [Parameter(Mandatory=$true)][string]$Task,
-    [string]$Model = "qwen-cline"
+    [string]$Model = "deepseek-coder-v2:16b"
 )
 
 if (-not (Test-Path $File)) {

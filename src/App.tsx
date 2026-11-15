@@ -1,4 +1,5 @@
-﻿import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import MishkaArchivesPage from './pages/MishkaArchivesPage';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
 import { lazy, Suspense } from 'react';
 import { registerSW } from 'virtual:pwa-register';
@@ -46,8 +47,8 @@ export default function App() {
 
   useEffect(() => {
     document.title = pathname.startsWith('/surah/')
-      ? `Reading Â· ${APP_NAME}`
-      : `${APP_NAME} â€” ${APP_TAGLINE}`;
+      ? `Reading · ${APP_NAME}`
+      : `${APP_NAME} — ${APP_TAGLINE}`;
   }, [pathname]);
 
   useEffect(() => {
@@ -73,7 +74,7 @@ export default function App() {
           {offlineReady && (
             <div className="pointer-events-none fixed inset-x-0 top-0 z-50 flex justify-center px-3 pt-3">
               <div className="rounded-full border border-line bg-surface px-3 py-1.5 text-xs font-medium text-ink shadow-lg shadow-black/10">
-                ManÄra is ready to work offline.
+                Manāra is ready to work offline.
               </div>
             </div>
           )}
@@ -81,7 +82,7 @@ export default function App() {
             <div className="fixed inset-x-0 bottom-4 z-50 flex justify-center px-3">
               <div className="flex max-w-md flex-wrap items-center gap-3 rounded-2xl border border-line bg-surface px-4 py-3 shadow-lg shadow-black/10">
                 <div className="text-sm text-ink">
-                  <span className="font-semibold">Update ready.</span> A new ManÄra version is available.
+                  <span className="font-semibold">Update ready.</span> A new Manāra version is available.
                 </div>
                 <div className="ml-auto flex items-center gap-2">
                   <button type="button" onClick={applyUpdate} className="rounded-full bg-accent px-3 py-1.5 text-xs font-semibold text-onaccent pressable">
@@ -94,7 +95,7 @@ export default function App() {
               </div>
             </div>
           )}
-          <Suspense fallback={<div className="p-6 text-center text-sm text-muted" role="status" aria-live="polite">Loading ManÄraâ€¦</div>}>
+          <Suspense fallback={<div className="p-6 text-center text-sm text-muted" role="status" aria-live="polite">Loading Manāra…</div>}>
             <Routes>
               <Route element={<AppLayout />}>
                 <Route index element={<Navigate to="/journey" replace />} />
@@ -196,7 +197,7 @@ function ReminderHost() {
       if (currentMinutes < reminderMinutes) return;
       if (notifications.daily && !dailyActivity[date]) {
         const quote = islamicQuoteOfTheDay(new Date());
-        show('daily', 'Your Quran streak is waiting! ðŸ”¥', quote.text, '/');
+        show('daily', 'Your Quran streak is waiting! 🔥', quote.text, '/');
       }
       if (notifications.nightlyMulk) {
         show('mulk', 'Surah Al-Mulk', 'Take a few minutes with Surah Al-Mulk.', '/surah/67');

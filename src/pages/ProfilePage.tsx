@@ -1,4 +1,4 @@
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAppSelector } from '../store';
 import { PageHeader } from '../components/ui/common';
 import { Icon } from '../components/ui/Icon';
@@ -7,7 +7,7 @@ import { ProfileAvatar } from '../components/ui/ProfileAvatar';
 export default function ProfilePage() {
 
 
-  const location = useLocation();
+  
   const navigate = useNavigate();
   const progress = useAppSelector((s) => s.progress);
   const settings = useAppSelector((s) => s.settings);
