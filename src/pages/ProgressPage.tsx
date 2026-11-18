@@ -418,11 +418,17 @@ function StatCard({
   );
   const cls = 'rounded-2xl bg-surface p-3';
   return onClick ? (
-    <button type="button" onClick={onClick} className={`${cls} text-left pressable`}>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`${cls} text-left pressable hover:bg-surface2/10 transition-colors cursor-pointer`}
+    >
       {content}
     </button>
   ) : (
-    <div className={cls}>{content}</div>
+    <div className={cls} role={undefined} tabIndex={undefined}>
+      {content}
+    </div>
   );
 }
 

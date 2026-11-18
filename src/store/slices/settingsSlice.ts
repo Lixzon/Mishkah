@@ -62,6 +62,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   ambientSoundVolume: 0.2,
   khatamPlannerEnabled: false,
   khatamTargetDays: 60,
+  showImportedAttribution: true,
 };
 
 export function normalizeSettings(stored: Partial<SettingsState>): SettingsState {
@@ -114,6 +115,7 @@ export function normalizeSettings(stored: Partial<SettingsState>): SettingsState
     ambientSoundVolume: Math.min(1, Math.max(0, stored.ambientSoundVolume ?? 0.2)),
     khatamPlannerEnabled: stored.khatamPlannerEnabled ?? false,
     khatamTargetDays: Math.min(365, Math.max(7, Math.round(stored.khatamTargetDays ?? 60))),
+    showImportedAttribution: stored.showImportedAttribution ?? true,
   };
 }
 
@@ -273,6 +275,9 @@ const settingsSlice = createSlice({
     setKhatamTargetDays(state, action: PayloadAction<number>) {
       state.khatamTargetDays = Math.min(365, Math.max(7, Math.round(action.payload)));
     },
+    setShowImportedAttribution(state, action: PayloadAction<boolean>) {
+      state.showImportedAttribution = action.payload;
+    },
   },
 });
 
@@ -322,5 +327,6 @@ export const {
   setAmbientSoundVolume,
   setKhatamPlannerEnabled,
   setKhatamTargetDays,
+  setShowImportedAttribution,
 } = settingsSlice.actions;
 export default settingsSlice.reducer;

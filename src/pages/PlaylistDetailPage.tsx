@@ -1,4 +1,4 @@
-import { useRef, useState, type DragEvent } from 'react';
+import { useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../store';
 import { player } from '../audio/controller';
@@ -8,6 +8,7 @@ import {
   removeItem,
   renamePlaylist,
   setActive,
+  setItemLoop,
   setItemRepeat,
   setItemSurah,
   setPlaylistReciter,
@@ -15,13 +16,14 @@ import {
 import { push } from '../store/slices/toastSlice';
 import { useQuran } from '../data/QuranProvider';
 import { SurahPicker } from '../components/surah/SurahPicker';
+import { PlaylistItemSheet } from '../components/playlist/PlaylistItemSheet';
+import { PlaylistTransferModal } from '../components/playlist/PlaylistTransferModal';
+import { useLongPressReorder } from '../components/playlist/useLongPressReorder';
 import { Modal } from '../components/ui/Modal';
 import { Icon } from '../components/ui/Icon';
 import { EmptyState } from '../components/ui/common';
 import { RECITERS, MAX_PLAYLIST_ITEMS } from '../lib/constants';
 import { surahNumberToArabic } from '../lib/utils';
-import { copyText } from '../lib/share';
-import { playlistDeepLink } from '../lib/deepLink';
 import type { PlaylistItem } from '../types';
 
 interface PickerState {
@@ -35,13 +37,22 @@ export default function PlaylistDetailPage() {
   const dispatch = useAppDispatch();
   const playlist = useAppSelector((s) => s.playlists.playlists.find((p) => p.id === id));
   const playerState = useAppSelector((s) => s.player);
+  const showImportedAttribution = useAppSelector((s) => s.settings.showImportedAttribution);
   const quran = useQuran();
 
   const [picker, setPicker] = useState<PickerState | null>(null);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameVal, setRenameVal] = useState('');
-  const dragIndex = useRef<number | null>(null);
-  const justDragged = useRef(false);
+  const [menuItemId, setMenuItemId] = useState<string | null>(null);
+  const [transferOpen, setTransferOpen] = useState(false);
+
+  const reorder = useLongPressReorder({
+    count: playlist?.items.length ?? 0,
+    onReorder: (from, to) => {
+      if (!playlist) return;
+      dispatch(moveItem({ playlistId: playlist.id, from, to }));
+    },
+  });
 
   if (!playlist) {
     return (
@@ -66,6 +77,31 @@ export default function PlaylistDetailPage() {
 
   const inList = new Set(playlist.items.map((it) => it.surah));
   const playingHere = playerState.playlistId === playlist.id;
+  const currentQueueSurah =
+    playingHere && playerState.order.length > 0
+      ? playerState.queue[playerState.order[playerState.pos]]
+      : null;
+
+  const menuItem = menuItemId ? playlist.items.find((it) => it.id === menuItemId) ?? null : null;
+  const menuMeta = menuItem ? quran.surahById(menuItem.surah) : undefined;
+  const menuIsCurrent = Boolean(menuItem) && currentQueueSurah === menuItem?.surah;
+
+  const playItem = (index: number, item: PlaylistItem) => {
+    if (currentQueueSurah === item.surah) {
+      player.togglePlay();
+      return;
+    }
+    let queueIndex = 0;
+    for (let i = 0; i < index; i++) queueIndex += Math.max(1, playlist.items[i].repeat);
+    dispatch(setActive(playlist.id));
+    player.startPlaylist(playlist, queueIndex);
+    dispatch(
+      push(
+        `Playing “${quran.surahById(item.surah)?.englishName ?? `Surah ${item.surah}`}”`,
+        'success',
+      ),
+    );
+  };
 
   const start = () => {
     dispatch(setActive(playlist.id));
@@ -109,22 +145,33 @@ export default function PlaylistDetailPage() {
     dispatch(moveItem({ playlistId: playlist.id, from, to }));
   };
 
-  const sharePlaylist = async () => {
-    const link = playlistDeepLink(playlist.id);
-    if (typeof navigator.share === 'function') {
-      try {
-        await navigator.share({
-          title: `${playlist.name} · Furqan`,
-          text: `Listen to “${playlist.name}” on Furqan`,
-          url: link,
-        });
-        return;
-      } catch (error) {
-        if (error instanceof DOMException && error.name === 'AbortError') return;
-      }
+  const applyItemLoop = (from: number, to: number) => {
+    if (!menuItem) return;
+    dispatch(
+      setItemLoop({ playlistId: playlist.id, itemId: menuItem.id, loop: { start: from, end: to } }),
+    );
+    if (menuIsCurrent) {
+      player.setVerseRange(from, to);
+      dispatch(push('Verse loop active.', 'success'));
+    } else {
+      dispatch(push('Loop saved — it starts when this surah plays.', 'success'));
     }
-    const copied = await copyText(`${playlist.name} · ${link}`);
-    dispatch(copied ? push('Playlist link copied.', 'success') : push('Could not copy the link.', 'error'));
+    setMenuItemId(null);
+  };
+
+  const clearItemLoop = () => {
+    if (!menuItem) return;
+    dispatch(setItemLoop({ playlistId: playlist.id, itemId: menuItem.id, loop: null }));
+    if (menuIsCurrent) player.clearVerseRange();
+    setMenuItemId(null);
+    dispatch(push('Verse loop removed.', 'info'));
+  };
+
+  const playNext = () => {
+    if (!menuItem) return;
+    const index = playlist.items.findIndex((it) => it.id === menuItem.id);
+    move(index, 0);
+    dispatch(push('Moved to play next.', 'success'));
   };
 
   return (
@@ -149,16 +196,21 @@ export default function PlaylistDetailPage() {
               {playlist.items.length}/{MAX_PLAYLIST_ITEMS} slots ·{' '}
               {playlist.items.reduce((s, it) => s + it.repeat, 0)} total plays per pass
             </div>
+            {showImportedAttribution && playlist.credit && (
+              <div className="mt-1.5 text-[11px] italic text-mut">
+                Originally created by {playlist.credit.author ?? 'a Furqan listener'}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-1">
             <button
               type="button"
-              aria-label="Share playlist"
-              title="Share playlist"
-              onClick={() => void sharePlaylist()}
+              aria-label="Import or export playlist"
+              title="Import / export"
+              onClick={() => setTransferOpen(true)}
               className="pressable rounded-full p-2 text-mut hover:bg-surface2 hover:text-ink"
             >
-              <Icon name="share" size={18} />
+              <Icon name="transfer" size={18} />
             </button>
             <button
               type="button"
@@ -200,9 +252,11 @@ export default function PlaylistDetailPage() {
 
       {/* items */}
       <div className="mt-4">
-        <div className="mb-2 flex items-center justify-between">
+        <div className="mb-2 flex items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-ink">Queue order</h2>
-          <span className="text-xs text-mut">tap a surah to change it · drag to reorder</span>
+          <span className="text-right text-[11px] text-mut">
+            hold &amp; drag to reorder · tap a name to change it
+          </span>
         </div>
 
         {playlist.items.length === 0 ? (
@@ -221,47 +275,34 @@ export default function PlaylistDetailPage() {
             }
           />
         ) : (
-          <div className="space-y-2">
-            {playlist.items.map((item, idx) => (
-              <SlotRow
-                key={item.id}
-                item={item}
-                index={idx}
-                total={playlist.items.length}
-                isCurrent={
-                  playingHere && playerState.queue[playerState.order[playerState.pos]] === item.surah
-                }
-                metaName={quran.surahById(item.surah)?.englishName ?? `Surah ${item.surah}`}
-                metaAr={quran.surahById(item.surah)?.name ?? ''}
-                onPick={() => setPicker({ target: 'replace', itemId: item.id })}
-                onRemove={() => dispatch(removeItem({ playlistId: playlist.id, itemId: item.id }))}
-                onRepeat={(r) =>
-                  dispatch(setItemRepeat({ playlistId: playlist.id, itemId: item.id, repeat: r }))
-                }
-                onMove={(dir) => move(idx, idx + dir)}
-                dragHandlers={{
-                  onDragStart: () => {
-                    dragIndex.current = idx;
-                  },
-                  onDragOver: (e) => {
-                    e.preventDefault();
-                  },
-                  onDrop: () => {
-                    const from = dragIndex.current;
-                    dragIndex.current = null;
-                    justDragged.current = true;
-                    window.setTimeout(() => {
-                      justDragged.current = false;
-                    }, 60);
-                    if (from !== null && from !== idx) move(from, idx);
-                  },
-                  onDragEnd: () => {
-                    dragIndex.current = null;
-                  },
-                }}
-                suppressClick={() => justDragged.current}
-              />
-            ))}
+          <div className={`space-y-2 ${reorder.dragIndex !== null ? 'touch-none' : ''}`}>
+            {playlist.items.map((item, idx) => {
+              const meta = quran.surahById(item.surah);
+              return (
+                <PlaylistRow
+                  key={item.id}
+                  item={item}
+                  metaName={meta?.englishName ?? `Surah ${item.surah}`}
+                  metaAr={meta?.name ?? ''}
+                  isCurrent={currentQueueSurah === item.surah}
+                  isPlaying={currentQueueSurah === item.surah && playerState.isPlaying}
+                  dragging={reorder.dragIndex === idx}
+                  dropTarget={
+                    reorder.dragIndex !== null &&
+                    reorder.dragIndex !== idx &&
+                    reorder.hoverIndex === idx
+                  }
+                  rowRef={reorder.registerRow(idx)}
+                  onPointerDown={reorder.onPointerDown(idx)}
+                  shouldIgnoreClick={reorder.shouldIgnoreClick}
+                  onPlay={() => playItem(idx, item)}
+                  onMenu={() => setMenuItemId(item.id)}
+                  onChangeSurah={() => setPicker({ target: 'replace', itemId: item.id })}
+                  onMoveUp={() => move(idx, idx - 1)}
+                  onMoveDown={() => move(idx, idx + 1)}
+                />
+              );
+            })}
           </div>
         )}
       </div>
@@ -280,11 +321,11 @@ export default function PlaylistDetailPage() {
       <div className="mt-6 rounded-2xl bg-surface2/60 p-4 text-xs leading-relaxed text-mut">
         <div className="mb-1 flex items-center gap-1.5 font-semibold text-ink">
           <Icon name="info" size={14} className="text-accent" />
-          How repeats work
+          Playlist tips
         </div>
-        Set each surah to play e.g. ×3. Furqan will recite it 3 times, then move to the next in this
-        queue. Turn on <b>repeat all</b> in the player to loop the whole playlist, or <b>shuffle</b> to
-        randomise the order.
+        Hold a row to drag it into a new position. Open <b>⋮</b> on any surah for verse looping,
+        repeats, playback speed, play next, or removal. <b>Shuffle</b> and <b>repeat all</b> stay in
+        the player.
       </div>
 
       {/* surah picker */}
@@ -294,6 +335,39 @@ export default function PlaylistDetailPage() {
         onPick={handlePick}
         disabled={picker?.target === 'add' ? inList : undefined}
         title={picker?.target === 'replace' ? 'Replace with…' : 'Add a surah'}
+      />
+
+      {/* per-surah options */}
+      <PlaylistItemSheet
+        open={menuItem !== null}
+        item={menuItem}
+        surahName={
+          menuItem ? menuMeta?.englishName ?? `Surah ${menuItem.surah}` : ''
+        }
+        ayahCount={menuItem ? menuMeta?.numberOfAyahs ?? 0 : 0}
+        playbackRate={playerState.playbackRate}
+        isCurrent={menuIsCurrent}
+        activeLoop={Boolean(playerState.range)}
+        onClose={() => setMenuItemId(null)}
+        onApplyLoop={applyItemLoop}
+        onClearLoop={clearItemLoop}
+        onRepeat={(repeat) => {
+          if (!menuItem) return;
+          dispatch(setItemRepeat({ playlistId: playlist.id, itemId: menuItem.id, repeat }));
+        }}
+        onPlayNext={playNext}
+        onRemove={() => {
+          if (!menuItem) return;
+          dispatch(removeItem({ playlistId: playlist.id, itemId: menuItem.id }));
+          setMenuItemId(null);
+        }}
+      />
+
+      <PlaylistTransferModal
+        open={transferOpen}
+        onClose={() => setTransferOpen(false)}
+        playlist={playlist}
+        onImported={(playlistId) => navigate(`/playlist/${playlistId}`)}
       />
 
       {/* rename modal */}
@@ -335,154 +409,125 @@ export default function PlaylistDetailPage() {
   );
 }
 
-/* ============================ slot row ============================ */
-function SlotRow({
+/* ============================ playlist row ============================ */
+function PlaylistRow({
   item,
-  index,
-  total,
-  isCurrent,
   metaName,
   metaAr,
-  onPick,
-  onRemove,
-  onRepeat,
-  onMove,
-  dragHandlers,
-  suppressClick,
+  isCurrent,
+  isPlaying,
+  dragging,
+  dropTarget,
+  rowRef,
+  onPointerDown,
+  shouldIgnoreClick,
+  onPlay,
+  onMenu,
+  onChangeSurah,
+  onMoveUp,
+  onMoveDown,
 }: {
   item: PlaylistItem;
-  index: number;
-  total: number;
-  isCurrent: boolean;
   metaName: string;
   metaAr: string;
-  onPick: () => void;
-  onRemove: () => void;
-  onRepeat: (r: number) => void;
-  onMove: (dir: -1 | 1) => void;
-  dragHandlers: {
-    onDragStart: () => void;
-    onDragOver: (e: DragEvent) => void;
-    onDrop: () => void;
-    onDragEnd: () => void;
-  };
-  suppressClick: () => boolean;
+  isCurrent: boolean;
+  isPlaying: boolean;
+  dragging: boolean;
+  dropTarget: boolean;
+  rowRef: (element: HTMLDivElement | null) => void;
+  onPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
+  shouldIgnoreClick: () => boolean;
+  onPlay: () => void;
+  onMenu: () => void;
+  onChangeSurah: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
 }) {
-  const repeat = Math.max(1, item.repeat);
+  const loop = item.loop;
   return (
     <div
-      draggable
-      onDragStart={dragHandlers.onDragStart}
-      onDragOver={dragHandlers.onDragOver}
-      onDrop={dragHandlers.onDrop}
-      onDragEnd={dragHandlers.onDragEnd}
+      ref={rowRef}
+      role="listitem"
+      tabIndex={0}
+      data-dragging={dragging ? 'true' : undefined}
+      data-drop-target={dropTarget ? 'true' : undefined}
+      onPointerDown={onPointerDown}
       onClick={() => {
-        if (!suppressClick()) onPick();
+        if (!shouldIgnoreClick()) onChangeSurah();
       }}
-      className={`flex items-stretch gap-2 rounded-2xl border bg-surface p-2.5 ${
-        isCurrent ? 'border-accent/50 bg-accent/6' : 'border-transparent'
-      } cursor-grab active:cursor-grabbing`}
+      onKeyDown={(event) => {
+        if (!event.altKey) return;
+        if (event.key === 'ArrowUp') {
+          event.preventDefault();
+          onMoveUp();
+        } else if (event.key === 'ArrowDown') {
+          event.preventDefault();
+          onMoveDown();
+        }
+      }}
+      aria-label={`${metaName}, surah ${item.surah}. Hold and drag to reorder.`}
+      className={`relative flex touch-manipulation select-none items-center gap-1.5 rounded-2xl border p-2 transition-[transform,background-color,border-color,box-shadow] duration-150 ${
+        isCurrent ? 'border-accent/40 bg-accent/6' : 'border-transparent bg-surface'
+      } ${dragging ? 'playlist-row-dragging z-10 border-accent/50 bg-surface3' : ''} ${
+        dropTarget ? 'playlist-row-dropzone' : ''
+      }`}
     >
-      <div className="flex flex-col items-center justify-center gap-0.5 px-1 text-mut">
-        <Icon name="grip" size={16} className="opacity-60" />
-      </div>
-
-      <div className="flex items-center">
+      <div className="flex min-w-0 flex-1 items-center gap-2.5">
         <div
-          className={`flex h-9 w-9 items-center justify-center rounded-lg text-sm font-semibold ${
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-semibold ${
             isCurrent ? 'bg-accent text-onaccent' : 'bg-accent/12 text-accent'
           }`}
         >
-          {index + 1}
+          {surahNumberToArabic(item.surah)}
         </div>
-      </div>
-
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
-          <span className="truncate text-sm font-semibold text-ink">{metaName}</span>
-          <span className="truncate text-xs text-mut" style={{ direction: 'rtl' }}>
-            {metaAr}
-          </span>
-        </div>
-        <div className="mt-1.5 flex items-center gap-1">
-          <span className="text-[11px] text-mut">
-            Slot {surahNumberToArabic(index + 1)} of {total}
-          </span>
-          <span className="mx-1 text-mut/50">·</span>
-          <div className="flex items-center gap-0.5">
-            <button
-              type="button"
-              aria-label="Decrease repeat"
-              onClick={(e) => {
-                e.stopPropagation();
-                onRepeat(repeat - 1);
-              }}
-              disabled={repeat <= 1}
-              className="flex h-6 w-6 items-center justify-center rounded-md bg-surface2 text-mut pressable disabled:opacity-35"
-            >
-              <Icon name="prev" size={10} />
-            </button>
-            <button
-              type="button"
-              onClick={(e) => e.stopPropagation()}
-              className="min-w-[2.4rem] rounded-md bg-surface2 px-1 py-0.5 text-center text-[11px] font-semibold text-ink"
-              title="Repeat count"
-            >
-              ×{repeat}
-            </button>
-            <button
-              type="button"
-              aria-label="Increase repeat"
-              onClick={(e) => {
-                e.stopPropagation();
-                onRepeat(repeat + 1);
-              }}
-              disabled={repeat >= 50}
-              className="flex h-6 w-6 items-center justify-center rounded-md bg-surface2 text-mut pressable disabled:opacity-35"
-            >
-              <Icon name="forward" size={10} />
-            </button>
+        <div className="min-w-0">
+          <div className="flex items-baseline gap-1.5">
+            <span className="truncate text-sm font-semibold text-ink">{metaName}</span>
+            <span className="shrink-0 text-[11px] tabular-nums text-mut">#{item.surah}</span>
+          </div>
+          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-mut">
+            <span className="truncate" style={{ direction: 'rtl' }}>
+              {metaAr}
+            </span>
+            {item.repeat > 1 && <span className="shrink-0">· ×{item.repeat}</span>}
+            {loop && (
+              <span className="shrink-0 rounded-full bg-accent/12 px-1.5 py-0.5 font-semibold text-accent">
+                {loop.start === loop.end
+                  ? `Ayah ${loop.start + 1}`
+                  : `Ayat ${loop.start + 1}–${loop.end + 1}`}
+              </span>
+            )}
           </div>
         </div>
       </div>
 
-      <div className="flex flex-col items-center justify-between py-0.5">
-        <button
-          type="button"
-          aria-label="Move up"
-          disabled={index === 0}
-          onClick={(e) => {
-            e.stopPropagation();
-            onMove(-1);
-          }}
-          className="pressable rounded-md p-1 text-mut hover:text-ink disabled:opacity-30"
-        >
-          <Icon name="chevronDown" size={15} className="rotate-180" />
-        </button>
-        <button
-          type="button"
-          aria-label="Move down"
-          disabled={index === total - 1}
-          onClick={(e) => {
-            e.stopPropagation();
-            onMove(1);
-          }}
-          className="pressable rounded-md p-1 text-mut hover:text-ink disabled:opacity-30"
-        >
-          <Icon name="chevronDown" size={15} />
-        </button>
-      </div>
+      <button
+        type="button"
+        aria-label={isPlaying ? `Pause ${metaName}` : `Play ${metaName}`}
+        title={isPlaying ? 'Pause' : 'Play'}
+        onClick={(event) => {
+          event.stopPropagation();
+          onPlay();
+        }}
+        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full pressable ${
+          isCurrent ? 'bg-accent text-onaccent shadow-card' : 'bg-surface2 text-accent hover:bg-accent/15'
+        }`}
+      >
+        <Icon name={isPlaying ? 'pause' : 'play'} size={17} />
+      </button>
 
       <button
         type="button"
-        aria-label="Remove slot"
-        onClick={(e) => {
-          e.stopPropagation();
-          onRemove();
+        aria-label={`More options for ${metaName}`}
+        title="More"
+        aria-haspopup="dialog"
+        onClick={(event) => {
+          event.stopPropagation();
+          onMenu();
         }}
-        className="pressable self-center rounded-full p-1.5 text-mut hover:bg-surface2 hover:text-danger"
+        className="flex h-9 w-8 shrink-0 items-center justify-center rounded-full text-mut pressable hover:bg-surface2 hover:text-ink"
       >
-        <Icon name="close" size={16} />
+        <Icon name="more" size={18} />
       </button>
     </div>
   );

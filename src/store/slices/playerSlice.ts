@@ -42,6 +42,8 @@ export interface PlayerState {
   volume: number; // 0..1
   muted: boolean;
   playbackRate: number;
+  /** Pause for a few seconds after each verse, for memorisation. */
+  hifzPause: boolean;
   usingDownload: boolean; // audio currently served from a downloaded blob
   buffering: boolean;
   error: string | null;
@@ -69,6 +71,7 @@ const initialState: PlayerState = {
   volume: 1,
   muted: false,
   playbackRate: 1,
+  hifzPause: false,
   usingDownload: false,
   buffering: false,
   error: null,

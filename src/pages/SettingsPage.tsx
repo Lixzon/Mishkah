@@ -39,6 +39,7 @@ import {
   setAmbientSoundVolume,
   setKhatamPlannerEnabled,
   setKhatamTargetDays,
+  setShowImportedAttribution,
 } from '../store/slices/settingsSlice';
 import { clearAllProgress, devAddStreakDays, devResetStreak, devSetStreak, setIstiqamahGoal } from '../store/slices/progressSlice';
 import { BADGE_TONES, ISTIQAMAH_MILESTONES, TIERS, TOTAL_QURAN_AYAHS, isTierUnlocked, tierProgress } from '../lib/progression';
@@ -947,6 +948,22 @@ export default function SettingsPage() {
             These simulate streak days so the tier locks and unlock celebrations can be tested without waiting.
           </p>
         </div>
+      </Card>
+
+      {/* ---- Privacy ---- */}
+      <Section title="Privacy" icon="lock" />
+      <Card>
+        <Row
+          label="Show attribution on imported playlists"
+          hint="Displays “Originally created by …” on playlists added from a shared code."
+          control={
+            <Toggle
+              checked={settings.showImportedAttribution}
+              onChange={(value) => dispatch(setShowImportedAttribution(value))}
+              label="Show attribution on imported playlists"
+            />
+          }
+        />
       </Card>
 
       {/* ---- Data ---- */}

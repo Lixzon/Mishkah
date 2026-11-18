@@ -16,7 +16,7 @@ export function BottomNav() {
             to={item.to}
             end={item.end}
             className={({ isActive }) =>
-              `flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl px-1 py-2 text-[10px] font-medium transition-colors ${
+              `flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl px-1 py-2 text-xs font-medium transition-colors ${
                 isActive ? 'text-accent' : 'text-mut'
               }`
             }
@@ -24,10 +24,10 @@ export function BottomNav() {
             {({ isActive }) => (
               <>
                 <div className={`rounded-full p-1.5 ${isActive ? 'bg-accent/12' : 'bg-transparent'}`}>
-                  <Icon name={item.icon} size={18} />
+                  <Icon name={item.icon} size={28} />
                 </div>
                 <span>{item.label}</span>
-                <span className={`h-1 w-1 rounded-full ${isActive ? 'bg-accent' : 'bg-transparent'}`} />
+                <span className={`mt-0.5 h-1.5 w-1.5 rounded-full ${isActive ? 'bg-accent' : 'bg-transparent'}`} />
               </>
             )}
           </NavLink>

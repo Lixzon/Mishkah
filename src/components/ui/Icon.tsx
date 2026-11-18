@@ -32,6 +32,7 @@ export type IconName =
   | 'search'
   | 'mic'
   | 'share'
+  | 'transfer'
   | 'headphones'
   | 'stop'
   | 'home'
@@ -250,6 +251,14 @@ const ICONS: Record<IconName, ReactElement> = {
       <path d="M12 15V3" />
       <path d="m8 7 4-4 4 4" />
       <path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" />
+    </S>
+  ),
+  transfer: (
+    <S>
+      <path d="M7 20V4" />
+      <path d="m3 8 4-4 4 4" />
+      <path d="M17 4v16" />
+      <path d="m21 16-4 4-4-4" />
     </S>
   ),
   headphones: (

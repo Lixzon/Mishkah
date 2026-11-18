@@ -257,7 +257,7 @@ export function ReadDashboard() {
               </div>
             </div>
             <button type="button" onClick={() => navigate(`/surah/${verse.surah}?ayah=${verse.ayah.i}`)} className="mt-1 block w-full text-left">
-              <p dir="rtl" lang="ar" className="ar-uthmani text-right text-2xl leading-[1.9] text-white">{verse.ayah.ar}</p>
+              <p dir="rtl" lang="ar" className="ar-uthmani text-right text-2xl leading-loose text-white">{verse.ayah.ar}</p>
               <p className="mt-2 text-sm leading-relaxed text-white/85">{verse.ayah.tr}</p>
               <p className="mt-2 text-xs font-medium text-white/65">{verse.surahName} · {verse.surah}:{verse.ayah.i}</p>
             </button>

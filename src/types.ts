@@ -43,6 +43,8 @@ export interface PlaylistItem {
   surah: number;
   /** how many times this surah repeats before the queue moves on */
   repeat: number;
+  /** Optional Hifz loop applied whenever this slot plays (0-based, inclusive). */
+  loop?: { start: number; end: number };
 }
 
 export interface Playlist {
@@ -51,6 +53,11 @@ export interface Playlist {
   reciter: string; // reciter edition id
   createdAt: number;
   items: PlaylistItem[];
+  /** Present when this playlist arrived through an import code. */
+  credit?: {
+    author: string | null;
+    importedAt: number;
+  };
 }
 
 /** Player repeat semantics layered on top of per-item repeat counts. */
@@ -309,6 +316,8 @@ export interface SettingsState {
   ambientSoundVolume: number;
   khatamPlannerEnabled: boolean;
   khatamTargetDays: number;
+  /** Show “Originally created by …” on playlists imported from a code. */
+  showImportedAttribution: boolean;
 }
 
 export interface ThemeState {

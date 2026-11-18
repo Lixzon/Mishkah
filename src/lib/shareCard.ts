@@ -522,6 +522,11 @@ export async function renderShareCard(options: CardOptions): Promise<HTMLCanvasE
     content.ayahTo && content.ayahTo !== content.ayahFrom
       ? `Ayat ${content.ayahFrom}–${content.ayahTo}`
       : `Ayah ${content.ayahFrom}`;
+  // Brand mark first, so every shared card carries the Furqan mihrab.
+  const markSize = Math.round(w * 0.05);
+  const markTop = pad * 0.16;
+  drawMihrabMark(ctx, cx, markTop, markSize);
+
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   ctx.fillStyle = 'rgba(255,255,255,0.72)';
@@ -529,14 +534,15 @@ export async function renderShareCard(options: CardOptions): Promise<HTMLCanvasE
   ctx.font = `600 ${headerSize}px ui-sans-serif, system-ui, sans-serif`;
   const header =
     `SURAH ${content.surahNumber} · ${content.surahName.toUpperCase()} · ${ayahLabel.toUpperCase()}`;
-  ctx.fillText(header, cx, pad * 0.7);
+  const headerY = markTop + markSize + h * 0.014;
+  ctx.fillText(header, cx, headerY);
 
   // Fit the Arabic and its translation into the safe band between the header
   // and the footer. Long passages (Ayat al-Kursi, Al-Baqara 282) shrink both
   // fonts instead of overflowing the card.
   const footerSize = Math.round(w * 0.02);
   const footerY = h - pad * 0.55;
-  const safeTop = pad * 0.7 + headerSize + h * 0.04;
+  const safeTop = headerY + headerSize + h * 0.04;
   const safeBottom = footerY - (showBadge ? footerSize * 2.6 : footerSize * 2);
   const available = Math.max(h * 0.35, safeBottom - safeTop);
   const dividerGap = h * 0.026;
@@ -635,6 +641,86 @@ export async function renderShareCard(options: CardOptions): Promise<HTMLCanvasE
   }
 
   return canvas;
+}
+
+/**
+ * The mihrab brand mark, painted with the same geometry as `MihrabLogo.tsx`
+ * so a shared card is recognisably Furqan even without the footer text.
+ */
+function drawMihrabMark(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  top: number,
+  size: number,
+): void {
+  const scale = size / 512;
+  ctx.save();
+  ctx.translate(cx - size / 2, top);
+  ctx.scale(scale, scale);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  // Nur beam ascending through the arch.
+  ctx.fillStyle = 'rgba(227,193,90,0.35)';
+  ctx.beginPath();
+  ctx.moveTo(244, 374);
+  ctx.lineTo(268, 374);
+  ctx.lineTo(266, 150);
+  ctx.lineTo(246, 150);
+  ctx.closePath();
+  ctx.fill();
+
+  // Mihrab arch.
+  ctx.strokeStyle = '#e3c15a';
+  ctx.lineWidth = 18;
+  ctx.beginPath();
+  ctx.moveTo(150, 428);
+  ctx.lineTo(150, 250);
+  ctx.bezierCurveTo(150, 180, 200, 140, 256, 116);
+  ctx.bezierCurveTo(312, 140, 362, 180, 362, 250);
+  ctx.lineTo(362, 428);
+  ctx.stroke();
+
+  // Finer inner arch.
+  ctx.globalAlpha = 0.45;
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(186, 428);
+  ctx.lineTo(186, 258);
+  ctx.bezierCurveTo(186, 206, 216, 176, 256, 158);
+  ctx.bezierCurveTo(296, 176, 326, 206, 326, 258);
+  ctx.lineTo(326, 428);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // Floor.
+  ctx.lineWidth = 12;
+  ctx.beginPath();
+  ctx.moveTo(132, 430);
+  ctx.lineTo(380, 430);
+  ctx.stroke();
+
+  // Open Qur'an on the floor.
+  ctx.fillStyle = '#f7f1e3';
+  ctx.beginPath();
+  ctx.moveTo(256, 372);
+  ctx.bezierCurveTo(232, 356, 202, 350, 168, 354);
+  ctx.lineTo(168, 402);
+  ctx.bezierCurveTo(202, 398, 232, 404, 256, 420);
+  ctx.bezierCurveTo(280, 404, 310, 398, 344, 402);
+  ctx.lineTo(344, 354);
+  ctx.bezierCurveTo(310, 350, 280, 356, 256, 372);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = 'rgba(201,162,39,0.85)';
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(256, 374);
+  ctx.lineTo(256, 418);
+  ctx.stroke();
+
+  ctx.restore();
 }
 
 async function drawPhotoCover(

@@ -73,17 +73,17 @@ export function MobileNav() {
           to={it.to}
           end={it.end}
           className={({ isActive }) =>
-            `flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-lg py-1.5 text-[10px] font-medium transition-colors ${
+            `flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-lg py-1.5 text-xs font-medium transition-colors ${
               isActive ? 'text-accent' : 'text-mut'
             }`
           }
         >
           {({ isActive }) => (
             <>
-              <Icon name={it.icon} size={22} />
+              <Icon name={it.icon} size={28} />
               {it.label}
               <span
-                className={`h-1 w-1 rounded-full ${isActive ? 'bg-accent' : 'bg-transparent'}`}
+                className={`mt-0.5 h-1.5 w-1.5 rounded-full ${isActive ? 'bg-accent' : 'bg-transparent'}`}
               />
             </>
           )}

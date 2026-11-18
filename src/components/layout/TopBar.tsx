@@ -58,7 +58,7 @@ export function TopBar() {
             </>
           ) : (
             <div className="flex min-w-0 items-center gap-2">
-              <MihrabLogo size={28} />
+              <MihrabLogo size={32} />
               <span className="truncate text-sm font-bold text-ink">{APP_NAME}</span>
             </div>
           )}

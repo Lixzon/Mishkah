@@ -53,6 +53,22 @@ const playlistSlice = createSlice({
         };
       },
     },
+    importPlaylist: {
+      reducer(state, action: PayloadAction<Playlist>) {
+        // Imported codes may arrive twice; keep both copies distinct.
+        state.playlists.push(action.payload);
+        state.activeId = action.payload.id;
+      },
+      prepare(input: Omit<Playlist, 'id' | 'createdAt'>) {
+        return {
+          payload: {
+            ...input,
+            id: uid('pl'),
+            createdAt: Date.now(),
+          } satisfies Playlist,
+        };
+      },
+    },
     renamePlaylist(state, action: PayloadAction<{ id: string; name: string }>) {
       const p = findList(state, action.payload.id);
       if (p) p.name = action.payload.name.trim() || p.name;
@@ -93,6 +109,24 @@ const playlistSlice = createSlice({
       const it = p?.items.find((x) => x.id === action.payload.itemId);
       if (it) it.surah = action.payload.surah;
     },
+    setItemLoop(
+      state,
+      action: PayloadAction<{
+        playlistId: string;
+        itemId: string;
+        loop: { start: number; end: number } | null;
+      }>,
+    ) {
+      const p = findList(state, action.payload.playlistId);
+      const it = p?.items.find((x) => x.id === action.payload.itemId);
+      if (!it) return;
+      if (!action.payload.loop) {
+        delete it.loop;
+        return;
+      }
+      const { start, end } = action.payload.loop;
+      it.loop = { start: Math.min(start, end), end: Math.max(start, end) };
+    },
     moveItem(state, action: PayloadAction<{ playlistId: string; from: number; to: number }>) {
       const p = findList(state, action.payload.playlistId);
       if (!p) return;
@@ -111,6 +145,7 @@ const playlistSlice = createSlice({
 export const {
   restorePlaylists,
   createPlaylist,
+  importPlaylist,
   renamePlaylist,
   deletePlaylist,
   setActive,
@@ -119,6 +154,7 @@ export const {
   removeItem,
   setItemRepeat,
   setItemSurah,
+  setItemLoop,
   moveItem,
   clearItems,
 } = playlistSlice.actions;

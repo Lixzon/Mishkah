@@ -81,6 +81,34 @@ export default function ProfilePage() {
         <InfoCard title="Progress" value={`${Math.min(100, Math.round((completedJuz / 30) * 100))}%`} subtitle="Juz complete" icon="progress" />
       </div>
 
+      <div className="mt-6 rounded-2xl border border-teal-500/20 bg-teal-500/5 p-4 sm:p-5">
+        <div className="flex items-center gap-3 mb-3">
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-teal-500/10">
+            <Icon name="heart" size={18} />
+          </span>
+          <div>
+            <h3 className="text-sm font-bold text-teal-600 tracking-wider">Support LIXZON</h3>
+            <p className="text-[11px] text-teal-600/70">Help us keep this app free and ad-free</p>
+          </div>
+        </div>
+        <p className="text-sm text-ink/80 mb-4">
+          Your support goes a long way in keeping the app free, ad-free, and online.
+        </p>
+        <div className="mb-4 rounded-xl border border-line bg-surface p-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-mut mb-1">
+            Developer Account
+          </p>
+          <p className="font-mono text-sm text-ink break-all">[Insert Account Number Here]</p>
+        </div>
+        <a
+          href="mailto:hello@lixzon.com"
+          className="inline-flex items-center gap-2 rounded-full bg-teal-500 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-600 transition-colors"
+        >
+          <Icon name="transfer" size={16} />
+          Contact Developer
+        </a>
+      </div>
+
       <div className="mt-5 rounded-2xl border border-line bg-surface p-4">
         <div className="mb-3 flex items-center justify-between gap-2">
           <div className="text-sm font-semibold text-ink">Istiqamah history</div>

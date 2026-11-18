@@ -29,6 +29,7 @@ interface PlayerPrefs {
   volume: number;
   muted: boolean;
   playbackRate: number;
+  hifzPause?: boolean;
 }
 
 class PlayerController {
@@ -57,6 +58,12 @@ class PlayerController {
   private stopAfterAyahIndex: number | null = null;
   private singleAyahEnded: (() => void) | null = null;
   private rangeAyahRepeated: (() => void) | null = null;
+  /** Verse to land on once the next chapter's metadata is known. */
+  private pendingEdgeSeek: 'first' | 'last' | null = null;
+  private hifzPauseTimer: number | null = null;
+  private fadeTimer: number | null = null;
+  /** Timestamp of the last "restart chapter" tap (double-tap = previous). */
+  private lastChapterRestartAt = 0;
 
   /* ------------------------------------------------ element --------- */
   private ensureEl(): HTMLAudioElement {
@@ -199,6 +206,7 @@ class PlayerController {
     if (knownLengths) this.applyWeights(knownLengths);
     else void this.hydrateWeights(surah);
     this.pendingStartAyah = startAyahIndex;
+    if (startAyahIndex !== null) this.pendingEdgeSeek = null;
     this.patch({
       surah,
       ayahCount,
@@ -237,6 +245,23 @@ class PlayerController {
     }
   }
 
+  /** The Hifz loop saved on the playlist slot that the queue is pointing at. */
+  private queueLoopRange(s: PlayerState): VerseRange | null {
+    if (!s.playlistId || s.order.length === 0) return null;
+    const playlist = store.getState().playlists.playlists.find((p) => p.id === s.playlistId);
+    const queueIndex = s.order[s.pos];
+    if (!playlist || queueIndex === undefined) return null;
+    let acc = 0;
+    for (const item of playlist.items) {
+      const repeat = Math.min(99, Math.max(1, Math.round(item.repeat) || 1));
+      if (queueIndex < acc + repeat) {
+        return item.loop ? { start: item.loop.start, end: item.loop.end } : null;
+      }
+      acc += repeat;
+    }
+    return null;
+  }
+
   /** Loads whatever the queue currently points at and (optionally) plays. */
   private async loadCurrent(autoplay: boolean, startAyahIndex: number | null = null): Promise<void> {
     const intentToken = ++this.playbackIntentToken;
@@ -244,10 +269,12 @@ class PlayerController {
     if (s.queue.length === 0 || s.order.length === 0) return;
     const surah = s.queue[s.order[s.pos]];
     if (surah === undefined) return;
+    const loop = this.queueLoopRange(s);
+    const from = loop ? loop.start : startAyahIndex;
     const count = await this.resolveAyahCount(surah, s.ayahCount);
     if (intentToken !== this.playbackIntentToken) return;
-    this.patch({ ayahCount: count });
-    await this.loadSurah(surah, s.reciter, count, startAyahIndex);
+    this.patch({ ayahCount: count, range: loop });
+    await this.loadSurah(surah, s.reciter, count, from);
     if (intentToken !== this.playbackIntentToken) return;
     if (autoplay) await this.playElement(intentToken);
   }
@@ -313,6 +340,11 @@ class PlayerController {
           `${this.realTiming[this.realTiming.length - 1]?.end ?? 0}s but the audio is ${duration}s`,
       );
       this.realTiming = null;
+    }
+
+    if (this.pendingEdgeSeek !== null) {
+      this.pendingStartAyah = this.pendingEdgeSeek === 'last' ? Math.max(0, count - 1) : 0;
+      this.pendingEdgeSeek = null;
     }
 
     if (this.pendingStartAyah !== null && duration > 0) {
@@ -411,6 +443,7 @@ class PlayerController {
     }
     this.indexFloor = range.start;
     this.patch({ ayah: range.start, currentTime: start });
+    if (s.isPlaying && s.hifzPause) this.pauseForHifz();
     return true;
   }
 
@@ -480,6 +513,9 @@ class PlayerController {
           name: this.metaCache.get(s.surah)?.englishName ?? `Surah ${s.surah}`,
         }),
       );
+      if (s.isPlaying && s.hifzPause && !wasSeeking && this.stopAfterAyahIndex === null) {
+        this.pauseForHifz();
+      }
     }
 
     // position state for lock-screen seek scrubbing
@@ -605,6 +641,7 @@ class PlayerController {
   /* ------------------------------------------- public API ------------ */
   startPlaylist(playlist: Playlist, fromIndex = 0): void {
     const s = this.getState();
+    this.pendingEdgeSeek = null;
     const queue = buildExpandedQueue(playlist.items);
     if (queue.length === 0) {
       store.dispatch(push('This playlist is empty — add some surahs first.', 'error'));
@@ -639,8 +676,11 @@ class PlayerController {
     stopAfterSurah?: boolean;
     recommended?: boolean;
     range?: VerseRange | null;
+    /** Land on the last verse once the surah length is known. */
+    fromEnd?: boolean;
   } = {}): void {
     this.rangeAyahRepeated = null;
+    this.pendingEdgeSeek = opts.fromEnd ? 'last' : null;
     const s = this.getState();
     const reciter = opts.reciter ?? s.reciter;
     this.stopAfterAyahIndex = opts.stopAfterAyahIndex ?? null;
@@ -783,6 +823,17 @@ class PlayerController {
   pause(): void {
     this.playbackIntentToken += 1;
     this.loadToken += 1;
+    if (this.hifzPauseTimer !== null) {
+      window.clearTimeout(this.hifzPauseTimer);
+      this.hifzPauseTimer = null;
+    }
+    if (this.fadeTimer !== null) {
+      window.clearTimeout(this.fadeTimer);
+      this.fadeTimer = null;
+      const el = this.ensureEl();
+      el.volume = this.getState().volume;
+      el.muted = this.getState().muted;
+    }
     const el = this.ensureEl();
     el.pause();
     this.patch({ isPlaying: false, buffering: false });
@@ -823,6 +874,80 @@ class PlayerController {
     void this.loadCurrent(true);
   }
 
+  /** Restart the current chapter; a second press steps to the previous one. */
+  previousChapter(): void {
+    const s = this.getState();
+    if (s.surah === null) return;
+    const now = Date.now();
+    const recentlyRestarted = now - this.lastChapterRestartAt < 2500;
+    if (!recentlyRestarted && s.currentTime > 3) {
+      this.lastChapterRestartAt = now;
+      if (s.range) this.seekToAyah(s.range.start);
+      else this.seek(0);
+      return;
+    }
+    this.lastChapterRestartAt = 0;
+    this.previous();
+  }
+
+  /** Step back exactly one verse, crossing into the previous chapter. */
+  previousVerse(): void {
+    const s = this.getState();
+    if (s.surah === null) return;
+    const range = s.range;
+    const idx = s.ayah ?? range?.start ?? 0;
+    // Keep memorisation loops closed: at the first verse, wrap to the last.
+    if (range) {
+      this.seekToAyah(idx <= range.start ? range.end : idx - 1);
+      return;
+    }
+    if (idx > 0) {
+      this.seekToAyah(idx - 1);
+      return;
+    }
+    this.jumpChapter(-1);
+  }
+
+  /** Step forward exactly one verse, crossing into the next chapter. */
+  nextVerse(): void {
+    const s = this.getState();
+    if (s.surah === null) return;
+    const range = s.range;
+    const idx = s.ayah ?? range?.start ?? 0;
+    if (range) {
+      this.seekToAyah(idx >= range.end ? range.start : idx + 1);
+      return;
+    }
+    if (idx < s.ayahCount - 1) {
+      this.seekToAyah(idx + 1);
+      return;
+    }
+    this.jumpChapter(1);
+  }
+
+  /**
+   * Change chapter and land on the edge verse that keeps verse-by-verse
+   * stepping continuous (the last verse when moving backwards).
+   */
+  private jumpChapter(dir: 1 | -1): void {
+    const s = this.getState();
+    if (s.queue.length === 0) return;
+    const edge = dir === 1 ? 'first' : 'last';
+    if (s.playlistId === null && s.queue.length === 1 && s.surah !== null) {
+      const target = s.surah + dir;
+      if (target < 1 || target > 114) return;
+      this.playSingleSurah(target, { reciter: s.reciter, fromEnd: dir === -1 });
+      return;
+    }
+    const pos =
+      dir === 1
+        ? (s.pos + 1 >= s.order.length ? 0 : s.pos + 1)
+        : (s.pos > 0 ? s.pos - 1 : s.order.length - 1);
+    this.pendingEdgeSeek = edge;
+    this.patch({ pos, ayah: null, range: null });
+    void this.loadCurrent(true);
+  }
+
   stop(): void {
     this.playbackIntentToken += 1;
     this.loadToken += 1;
@@ -831,6 +956,15 @@ class PlayerController {
       window.clearTimeout(this.sleepTimerId);
       this.sleepTimerId = null;
     }
+    if (this.hifzPauseTimer !== null) {
+      window.clearTimeout(this.hifzPauseTimer);
+      this.hifzPauseTimer = null;
+    }
+    if (this.fadeTimer !== null) {
+      window.clearTimeout(this.fadeTimer);
+      this.fadeTimer = null;
+    }
+    this.pendingEdgeSeek = null;
     this.stopTimelineSampler();
     this.indexFloor = null;
     el.pause();
@@ -911,6 +1045,10 @@ class PlayerController {
   }
 
   setVolume(v: number): void {
+    if (this.fadeTimer !== null) {
+      window.clearTimeout(this.fadeTimer);
+      this.fadeTimer = null;
+    }
     const vol = Math.min(1, Math.max(0, v));
     const el = this.ensureEl();
     el.volume = vol;
@@ -925,6 +1063,48 @@ class PlayerController {
     el.playbackRate = playbackRate;
     this.patch({ playbackRate });
     this.savePrefs();
+  }
+
+  /** Memorisation break: pause briefly after every verse. */
+  setHifzPause(v: boolean): void {
+    this.patch({ hifzPause: v });
+    if (!v && this.hifzPauseTimer !== null) {
+      window.clearTimeout(this.hifzPauseTimer);
+      this.hifzPauseTimer = null;
+    }
+    this.savePrefs();
+  }
+
+  /** Gently lowers the volume before pausing, so the timer never cuts a verse. */
+  private fadeOutAndPause(seconds = 6): void {
+    if (this.fadeTimer !== null) window.clearTimeout(this.fadeTimer);
+    const el = this.ensureEl();
+    const startVol = el.volume;
+    const startedAt = performance.now();
+    const step = () => {
+      const t = Math.min(1, (performance.now() - startedAt) / (seconds * 1000));
+      el.volume = Math.max(0, startVol * (1 - t));
+      if (t < 1) {
+        this.fadeTimer = window.setTimeout(step, 80);
+        return;
+      }
+      this.fadeTimer = null;
+      this.pause();
+      el.volume = startVol;
+      el.muted = this.getState().muted;
+    };
+    step();
+  }
+
+  private pauseForHifz(): void {
+    if (this.hifzPauseTimer !== null) return;
+    const el = this.ensureEl();
+    el.pause();
+    this.patch({ isPlaying: false });
+    this.hifzPauseTimer = window.setTimeout(() => {
+      this.hifzPauseTimer = null;
+      if (store.getState().player.hifzPause) void this.play();
+    }, 3000);
   }
 
   cyclePlaybackRate(): void {
@@ -1005,8 +1185,8 @@ class PlayerController {
     this.sleepTimerId = window.setTimeout(() => {
       this.sleepTimerId = null;
       this.patch({ sleepTimer: null });
-      this.pause();
-      store.dispatch(push('Sleep timer finished — playback paused.', 'info'));
+      this.fadeOutAndPause(6);
+      store.dispatch(push('Sleep timer finished — fading playback out.', 'info'));
     }, minutes * 60_000);
   }
 
@@ -1022,7 +1202,12 @@ class PlayerController {
   /* ------------------------------------------- misc ------------------- */
   private savePrefs(): void {
     const s = this.getState();
-    const prefs: PlayerPrefs = { volume: s.volume, muted: s.muted, playbackRate: s.playbackRate };
+    const prefs: PlayerPrefs = {
+      volume: s.volume,
+      muted: s.muted,
+      playbackRate: s.playbackRate,
+      hifzPause: s.hifzPause,
+    };
     try {
       localStorage.setItem(PLAYER_PREFS, JSON.stringify(prefs));
     } catch {
@@ -1040,7 +1225,12 @@ class PlayerController {
       /* ignore */
     }
     const playbackRate = Number.isFinite(prefs.playbackRate) ? prefs.playbackRate : 1;
-    this.patch({ volume: prefs.volume, muted: prefs.muted, playbackRate });
+    this.patch({
+      volume: prefs.volume,
+      muted: prefs.muted,
+      playbackRate,
+      hifzPause: Boolean(prefs.hifzPause),
+    });
     const el = this.ensureEl();
     el.volume = prefs.volume;
     el.muted = prefs.muted;

@@ -32,6 +32,8 @@ import { Slider, Toggle } from '../components/ui/controls';
 import { Modal } from '../components/ui/Modal';
 import { SurahArtwork } from '../components/ui/SurahArtwork';
 import { VerseActionModal } from '../components/VerseActionModal';
+import { ShareCardModal } from '../components/share/ShareCardModal';
+import { AddToPlaylistModal } from '../components/playlist/AddToPlaylistModal';
 import { SessionEndModal } from '../components/SessionEndModal';
 import { insightForAyah } from '../data/quranInsightsData';
 import {
@@ -72,6 +74,7 @@ export default function SurahReader() {
   const [activeAyah, setActiveAyah] = useState(0);
   const [focusedAyahIndex, setFocusedAyahIndex] = useState<number | null>(null);
   const [optionsOpen, setOptionsOpen] = useState(false);
+  const [addToPlaylistOpen, setAddToPlaylistOpen] = useState(false);
   const [playbackSettingsOpen, setPlaybackSettingsOpen] = useState(false);
   const [mediaHudVisible, setMediaHudVisible] = useState(true);
   const [readerElapsedSeconds, setReaderElapsedSeconds] = useState(0);
@@ -779,6 +782,16 @@ export default function SurahReader() {
         dispatch={dispatch}
         viewMode={viewMode}
         onViewModeChange={changeViewMode}
+        onAddToPlaylist={() => {
+          setOptionsOpen(false);
+          setAddToPlaylistOpen(true);
+        }}
+      />
+      <AddToPlaylistModal
+        open={addToPlaylistOpen}
+        onClose={() => setAddToPlaylistOpen(false)}
+        surah={surah.number}
+        surahName={surah.englishName}
       />
       <ReaderPlaybackSettings
         open={playbackSettingsOpen}
@@ -887,6 +900,7 @@ function AyahBlock({
   style?: React.CSSProperties;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const dispatch = useAppDispatch();
   const memorized = useAppSelector((state) => state.memorized.items.find((item) => item.id === bookmark.id));
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -924,6 +938,7 @@ function AyahBlock({
   };
 
   return (
+    <>
     <div
       data-index={virtualIndex}
       onClick={() => {
@@ -1024,10 +1039,33 @@ function AyahBlock({
             >
               <Icon name="stack" size={15} /> Copy Arabic
             </button>
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-ink hover:bg-surface2"
+              onClick={(event) => {
+                event.stopPropagation();
+                setShareOpen(true);
+                closeMenu();
+              }}
+            >
+              <Icon name="share" size={15} /> Share as image
+            </button>
           </div>
         )}
       </div>
     </div>
+    <ShareCardModal
+      open={shareOpen}
+      onClose={() => setShareOpen(false)}
+      content={{
+        surahName: bookmark.surahName,
+        surahNumber: bookmark.surah,
+        ayahFrom: bookmark.ayah,
+        arabic: displayedArabic,
+        translation: bookmark.translation,
+      }}
+    />
+    </>
   );
 }
 
@@ -1396,6 +1434,7 @@ function ReaderOptions({
   dispatch,
   viewMode,
   onViewModeChange,
+  onAddToPlaylist,
 }: {
   open: boolean;
   onClose: () => void;
@@ -1403,6 +1442,7 @@ function ReaderOptions({
   dispatch: ReturnType<typeof useAppDispatch>;
   viewMode: 'list' | 'book';
   onViewModeChange: (mode: 'list' | 'book') => void;
+  onAddToPlaylist: () => void;
 }) {
   const theme = useAppSelector((state) => state.theme);
   const streak = useAppSelector((state) => state.progress.progression.currentStreak);
@@ -1423,6 +1463,20 @@ function ReaderOptions({
 
   return (
     <Modal open={open} onClose={onClose} title="Reading settings" variant="frosted">
+      <SectionLabel>Playlist</SectionLabel>
+      <button
+        type="button"
+        onClick={onAddToPlaylist}
+        className="mt-1 flex w-full items-center gap-3 rounded-xl border border-line bg-surface2 px-3 py-2.5 text-left pressable hover:border-accent/40"
+      >
+        <Icon name="plus" size={16} className="shrink-0 text-accent" />
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold text-ink">Add this surah to a playlist</span>
+          <span className="block text-[11px] text-mut">Queue it for later listening or memorisation.</span>
+        </span>
+        <Icon name="chevronRight" size={16} className="shrink-0 text-mut" />
+      </button>
+
       <SectionLabel>Appearance</SectionLabel>
       <div className="grid grid-cols-2 gap-2 py-2">
         {previews.map((preview) => {
