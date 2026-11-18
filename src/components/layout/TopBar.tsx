@@ -5,7 +5,6 @@ import { useAppSelector } from '../../store';
 import { useVoiceSearch } from '../search/VoiceSearchModal';
 import { QuranSearchModal } from '../search/QuranSearchModal';
 import { MihrabLogo } from '../ui/MihrabLogo';
-import { StreakHub } from '../ui/StreakHub';
 import { Icon } from '../ui/Icon';
 import { clearSessionFlag } from '../../lib/sessionFlags';
 
@@ -24,9 +23,7 @@ export function TopBar() {
         <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3 px-3 py-2 sm:px-4">
           {isReadHome ? (
             <>
-              <div className="flex shrink-0 items-center gap-2">
-                <StreakHub />
-              </div>
+              <div className="flex shrink-0 items-center" />
               <div className="ml-auto flex shrink-0 items-center gap-1.5">
                 <button
                   type="button"

@@ -26,7 +26,7 @@ export function Sidebar() {
         <MihrabLogo size={40} className="shrink-0 drop-shadow-sm" />
         <div className="leading-tight">
           <div className="text-[15px] font-bold text-ink">{APP_NAME}</div>
-          <div className="text-xs text-accent" style={{ direction: 'rtl' }}>
+          <div className="text-sm text-accent" style={{ direction: 'rtl' }}>
             {APP_NAME_AR} · القرآن
           </div>
         </div>
@@ -73,7 +73,7 @@ export function MobileNav() {
           to={it.to}
           end={it.end}
           className={({ isActive }) =>
-            `flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-lg py-1.5 text-xs font-medium transition-colors ${
+            `flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-lg py-1.5 text-sm font-medium transition-colors ${
               isActive ? 'text-accent' : 'text-mut'
             }`
           }

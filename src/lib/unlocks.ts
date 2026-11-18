@@ -16,9 +16,6 @@ import type { AssistantLayout, ThemeMode } from '../types';
 /** Reading themes (Sepia / Midnight Blue / Emerald) unlock here. */
 export const READING_THEMES_UNLOCK_DAYS = 100;
 
-/** Advanced UI customization unlocks here. */
-export const AI_UI_UNLOCK_DAYS = 365;
-
 /** Reader-facing appearance themes that the 100-day milestone grants. */
 export interface ReadingThemeOption {
   /** The `ThemeMode` this option applies. */
@@ -57,41 +54,7 @@ export interface AiUiFeature {
   description: string;
 }
 
-export const AI_UI_FEATURES: AiUiFeature[] = [
-  {
-    id: 'dynamicLayouts',
-    label: 'Dynamic Quran Assistant Layouts',
-    description: 'Classic, Guided and Immersive reader layouts that reshape ayah spacing and typography.',
-  },
-  {
-    id: 'customThemes',
-    label: 'Custom Themes',
-    description: 'Mix your own accent colour and apply it across the whole app.',
-  },
-];
-
-/** The reader layout presets granted by the 365-day milestone. */
-export interface AssistantLayoutOption {
-  id: AssistantLayout;
-  label: string;
-  description: string;
-}
-
-export const ASSISTANT_LAYOUTS: AssistantLayoutOption[] = [
-  { id: 'classic', label: 'Classic', description: 'The standard Furqan ayah layout.' },
-  { id: 'guided', label: 'Guided', description: 'Roomier measure and larger translation text.' },
-  { id: 'immersive', label: 'Immersive', description: 'Dense, Arabic-forward pages that fit more ayah.' },
-];
-
 /** One milestone row in the tracker modal and the Settings locks. */
-export interface MilestoneUnlock {
-  id: 'reading-themes' | 'ai-ui';
-  days: number;
-  title: string;
-  summary: string;
-  /** Human-readable list of what the milestone grants. */
-  features: string[];
-}
 
 export const MILESTONE_UNLOCKS: MilestoneUnlock[] = [
   {
@@ -138,10 +101,6 @@ function isLocalDevOverrideEnabled(): boolean {
 
 export function isReadingThemesUnlocked(streak: number): boolean {
   return isLocalDevOverrideEnabled() || streak >= READING_THEMES_UNLOCK_DAYS;
-}
-
-export function isAiUiUnlocked(streak: number): boolean {
-  return isLocalDevOverrideEnabled() || streak >= AI_UI_UNLOCK_DAYS;
 }
 
 export function unlockProgress(streak: number, days: number): UnlockProgress {

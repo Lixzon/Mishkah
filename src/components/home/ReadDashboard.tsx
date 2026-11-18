@@ -226,7 +226,7 @@ export function ReadDashboard() {
           aria-label="Refresh Home photos"
           title="Refresh Home photos"
           onClick={shufflePhotos}
-          className="inline-flex min-h-9 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium text-accent transition hover:bg-surface2"
+          className="inline-flex min-h-9 items-center gap-1.5 rounded-full px-2.5 text-sm font-medium text-accent transition hover:bg-surface2"
         >
           <Icon name="refresh" size={14} />
           Refresh photos
@@ -259,7 +259,7 @@ export function ReadDashboard() {
             <button type="button" onClick={() => navigate(`/surah/${verse.surah}?ayah=${verse.ayah.i}`)} className="mt-1 block w-full text-left">
               <p dir="rtl" lang="ar" className="ar-uthmani text-right text-2xl leading-loose text-white">{verse.ayah.ar}</p>
               <p className="mt-2 text-sm leading-relaxed text-white/85">{verse.ayah.tr}</p>
-              <p className="mt-2 text-xs font-medium text-white/65">{verse.surahName} · {verse.surah}:{verse.ayah.i}</p>
+              <p className="mt-2 text-sm font-medium text-white/65">{verse.surahName} · {verse.surah}:{verse.ayah.i}</p>
             </button>
           </div>
         </article>
@@ -273,7 +273,7 @@ export function ReadDashboard() {
             Reflect &amp; act · {dailyTheme.title}
           </p>
           <p className="mt-2 text-sm font-medium leading-relaxed">{reflection.question}</p>
-          <p className="mt-2 text-xs leading-relaxed text-white/75">
+          <p className="mt-2 text-sm leading-relaxed text-white/75">
             <span className="font-semibold text-white/90">One small step: </span>{reflection.action}
           </p>
           <button
@@ -295,7 +295,7 @@ export function ReadDashboard() {
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-emerald-200">Daily Quran journey</p>
             <h2 className="mt-1 text-lg font-semibold">The story of {journey.title}</h2>
-            <p className="mt-1 text-xs leading-relaxed text-white/70">Read related passages, then continue with the long story and a reflection.</p>
+            <p className="mt-1 text-sm leading-relaxed text-white/70">Read related passages, then continue with the long story and a reflection.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             {journey.passages.map((passage) => (
@@ -320,7 +320,7 @@ export function ReadDashboard() {
             onClick={(event) => {
               if (!window.confirm('Open this daily Quran journey in Mishkah?')) event.preventDefault();
             }}
-            className="inline-flex min-h-10 items-center rounded-full bg-white px-4 py-2 text-xs font-semibold text-emerald-950 transition hover:bg-emerald-50"
+            className="inline-flex min-h-10 items-center rounded-full bg-white px-4 py-2 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-50"
           >
             Read the long story in Mishkah ↗
           </a>
@@ -358,7 +358,7 @@ export function ReadDashboard() {
           <div className="min-w-0">
             <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-emerald-200">This week’s surah spotlight</p>
             <h2 className="mt-1 text-lg font-semibold">{weeklySurahName}</h2>
-            <p className="mt-1 text-xs leading-relaxed text-white/75">{weeklySurah.note}</p>
+            <p className="mt-1 text-sm leading-relaxed text-white/75">{weeklySurah.note}</p>
             <p className="mt-2 text-[10px] font-medium text-white/55">Qur’an {weeklySurah.surah}:{weeklySurah.range}</p>
           </div>
           <button
@@ -384,7 +384,7 @@ export function ReadDashboard() {
           <span className="mt-1 block text-base font-semibold">
             {settings.khatamPlannerEnabled ? `A gentle ${settings.khatamTargetDays}-day reading plan` : 'Make space for a complete reading'}
           </span>
-          <span className="mt-1 block text-xs text-white/70">
+          <span className="mt-1 block text-sm text-white/70">
             {settings.khatamPlannerEnabled
               ? `About ${khatamAyahsPerDay} ayahs each day`
               : 'Choose a pace that feels steady and sustainable'}
@@ -397,8 +397,8 @@ export function ReadDashboard() {
 
       <section aria-label="Quran reading recommendations">
         <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-xs font-semibold uppercase tracking-widest text-mut">A quiet place to begin</h2>
-          <button type="button" onClick={() => navigate('/guidance')} className="text-xs font-medium text-accent hover:underline">More guidance</button>
+          <h2 className="text-sm font-semibold uppercase tracking-widest text-mut">A quiet place to begin</h2>
+          <button type="button" onClick={() => navigate('/guidance')} className="text-sm font-medium text-accent hover:underline">More guidance</button>
         </div>
         <div className="grid grid-cols-2 gap-2.5">
           {HOME_RECOMMENDATIONS.map((recommendation) => {

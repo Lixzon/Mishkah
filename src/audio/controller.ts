@@ -13,10 +13,10 @@ import { recordDiagnostic } from '../services/diagnostics';
 
 const PLAYER_PREFS = 'furqan:player';
 
-/** How often the highlight is re-resolved while playing. `timeupdate` is
- *  throttled to ~4 Hz on desktop and as low as 1 Hz on some mobile builds,
- *  which lets the highlight cross a verse boundary late. */
-const TIMELINE_SAMPLE_MS = 200;
+/** How often the highlight is re-resolved while playing.
+ *  50ms ensures precise verse alignment even when timeupdate throttles to 1Hz
+ *  on mobile builds. */
+const TIMELINE_SAMPLE_MS = 50;
 
 /** A timing table describes one exact rendition. If the loaded file differs in
  *  length by more than this, the table belongs to another edit and is dropped. */
