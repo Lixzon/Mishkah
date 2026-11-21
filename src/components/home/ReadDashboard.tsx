@@ -129,6 +129,8 @@ export function ReadDashboard() {
     ? bookmarks.some((bookmark) => bookmark.id === `${verse.surah}:${verse.ayah.i}`)
     : false;
 
+  const [showLearnMore, setShowLearnMore] = useState(false);
+
   useEffect(() => {
     const refreshDate = () => setDailyDateKey(utcDateKey());
     window.addEventListener('focus', refreshDate);
@@ -253,7 +255,15 @@ export function ReadDashboard() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z" />
                   </svg>
                 </button>
-                <button type="button" aria-label="Share verse of the day" title="Share verse" onClick={() => void shareVerse()} className="rounded-full p-2 text-white/80 hover:bg-white/10"><Icon name="forward" size={17} /></button>
+                <button type="button" aria-label="Share verse of the day" title="Share verse" onClick={() => void shareVerse()} className="rounded-full p-2 text-white/80 hover:bg-white/10"><Icon name="share" size={17} /><button
+  type="button"
+  aria-label="Learn more about this verse"
+  title="Learn more"
+  onClick={() => setShowLearnMore(true)}
+  className="rounded-full p-2 text-white/80 hover:bg-white/10 flex items-center justify-center gap-1.5"
+>
+  <Icon name="book" size={17} />
+</button>
               </div>
             </div>
             <button type="button" onClick={() => navigate(`/surah/${verse.surah}?ayah=${verse.ayah.i}`)} className="mt-1 block w-full text-left">
@@ -423,4 +433,37 @@ export function ReadDashboard() {
       </section>
     </section>
   );
-}
+  {showLearnMore && (
+  <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+    <div className="bg-surface/90 rounded-2xl p-6 max-w-md w-full shadow-lg max-h-[80vh] overflow-y-auto">
+      <div className="flex items-center justify-between gap-2 mb-4">
+        <h3 className="text-xl font-bold text-white">Deeper Meaning</h3>
+        <button
+          type="button"
+          aria-label="Close learn more modal"
+          onClick={() => setShowLearnMore(false)}
+          className="text-white"
+        >
+          X
+        </button>
+      </div>
+      <p className="text-white/90 text-sm mb-4 line-clamp-4">{dailyTheme.explanation}</p>
+      <div className="mt-6 flex gap-4">
+        <button
+          type="button"
+          onClick={() => window.open(dailyTheme.learnMoreUrl, '_blank')}
+          className="rounded-full bg-white/90 px-4 py-2 text-black text-sm font-medium"
+        >
+          Read More Tafsir
+        </button>
+        <button
+          type="button"
+          onClick={() => window.open('https://furqan-quran-app.vercel.app', '_blank')}
+          className="rounded-full bg-white/90 px-4 py-2 text-black text-sm font-medium"
+        >
+          Open in Furqan
+        </button>
+      </div>
+    </div>
+  </div>
+)}

@@ -15,7 +15,6 @@ export const MAIN_ITEMS: NavItem[] = [
   { to: '/', icon: 'book', label: 'Read', end: true },
   { to: '/library', icon: 'list', label: 'Library' },
   { to: '/guidance', icon: 'quote', label: 'Guidance' },
-  { to: '/progress', icon: 'progress', label: 'Progress' },
   { to: '/profile', icon: 'user', label: 'Profile' },
 ];
 

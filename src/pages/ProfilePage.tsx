@@ -66,6 +66,19 @@ export default function ProfilePage() {
             </span>
           ))}
         </div>
+
+        <div className="mt-4 rounded-2xl border border-accent/30 bg-accent/5 p-4 hover:bg-accent/10 transition-colors cursor-pointer" onClick={() => navigate('/progress')}>
+          <div className="flex items-center gap-3">
+            <div className="rounded-full bg-accent/12 p-2">
+              <Icon name="progress" size={20} className="text-accent" />
+            </div>
+            <div>
+              <div className="font-medium text-accent">My Progress</div>
+              <div className="text-[11px] text-mut">Your journey of consistency</div>
+            </div>
+          </div>
+          <Icon name="chevron-right" size={16} className="ml-auto text-mut" />
+        </div>
       </div>
 
       <div className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">

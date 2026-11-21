@@ -1,0 +1,30 @@
+﻿import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAppDispatch, useAppSelector } from '../../store';
+import { getSurah } from '../../lib/dataClient';
+import { TOTAL_QURAN_AYAHS } from '../../lib/progression';
+import { toggleAyahBookmark } from '../../store/slices/bookmarksSlice';
+import { push } from '../../store/slices/toastSlice';
+import { player } from '../../audio/controller';
+import { useQuran } from '../../data/QuranProvider';
+import { Icon } from '../ui/Icon';
+import { ReadScene, type ReadSceneType } from './ReadScene';
+import { QURAN_GUIDANCE } from '../../data/quranGuidanceData';
+import { getDailyQuranJourney } from '../../data/dailyQuranJourney';
+import { dailyQhdTheme, type DailyQhdTheme } from '../../data/dailyQhdReminder';
+import { utcDateKey } from '../../data/quranSchedule';
+import type { AyahData } from '../../types';
+
+const HOME_PHOTO_VARIANT_KEY = 'furqan:home-photo-variant';
+const HOME_PHOTO_VARIANT_COUNT = 9;
+const DAY_MS = 86_400_000;
+
+const REFLECT_AND_ACT: Record<DailyQhdTheme['id'], { question: string; action: string }> = {
+  remembrance: {
+    question: 'What moment today could you meet with remembrance of Allah?',
+    action: 'Pause for a minute of dhikr or a sincere duâ€™a.',
+  },
+  mercy: {
+    question: 'Who around you might need patience, mercy, or practical help?',
+    action: 'Offer one specific kindness without expecting anything back.',
+  },
