@@ -55,7 +55,8 @@ export type IconName =
   | 'snowflake'
   | 'lock'
   | 'unlock'
-  | 'user';
+  | 'user'
+  | 'star';
 
 const S = (props: { children: ReactElement[] | ReactElement; fill?: boolean }) => (
   <g fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">

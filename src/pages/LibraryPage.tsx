@@ -7,14 +7,16 @@ import FavoritesPage from './FavoritesPage';
 import PlaylistsPage from './PlaylistsPage';
 import DownloadsPage from './DownloadsPage';
 import MemorizedAyahsPage from './MemorizedAyahsPage';
+import NamesOfAllahPage from './NamesOfAllahPage';
 
-type LibrarySection = 'favorites' | 'playlists' | 'downloads' | 'memorized';
+type LibrarySection = 'favorites' | 'playlists' | 'downloads' | 'memorized' | 'names';
 
-const SECTIONS: Array<{ id: LibrarySection; label: string; icon: 'heart' | 'list' | 'download' | 'book' }> = [
+const SECTIONS: Array<{ id: LibrarySection; label: string; icon: 'heart' | 'list' | 'download' | 'book' | 'star' }> = [
   { id: 'favorites', label: 'Favorites', icon: 'heart' },
   { id: 'playlists', label: 'Playlists', icon: 'list' },
   { id: 'downloads', label: 'Downloads', icon: 'download' },
   { id: 'memorized', label: 'Memorized', icon: 'book' },
+  { id: 'names', label: '99 Names', icon: 'star' },
 ];
 
 export default function LibraryPage() {
@@ -72,6 +74,7 @@ export default function LibraryPage() {
         {section === 'playlists' && <PlaylistsPage />}
         {section === 'downloads' && <DownloadsPage />}
         {section === 'memorized' && <MemorizedAyahsPage />}
+        {section === 'names' && <NamesOfAllahPage />}
       </div>
     </div>
   );
