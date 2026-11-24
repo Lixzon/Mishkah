@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../../store';
 import { getSurah } from '../../lib/dataClient';
@@ -22,7 +22,7 @@ const DAY_MS = 86_400_000;
 const REFLECT_AND_ACT: Record<DailyQhdTheme['id'], { question: string; action: string }> = {
   remembrance: {
     question: 'What moment today could you meet with remembrance of Allah?',
-    action: 'Pause for a minute of dhikr or a sincere duâ€™a.',
+    action: 'Pause for a minute of dhikr or a sincere du’a.',
   },
   mercy: {
     question: 'Who around you might need patience, mercy, or practical help?',
@@ -51,13 +51,13 @@ const REFLECT_AND_ACT: Record<DailyQhdTheme['id'], { question: string; action: s
 };
 
 const WEEKLY_SURAH_SPOTLIGHTS = [
-  { surah: 1, name: 'Al-Fatiha', range: '1â€“7', note: 'A short opening prayer asking Allah for guidance.' },
-  { surah: 18, name: 'Al-Kahf', range: '1â€“10', note: 'Begin with verses about revelation, faith, and steadfastness.' },
-  { surah: 55, name: 'Ar-Rahman', range: '1â€“16', note: 'Reflect on signs of creation and the blessings named in these verses.' },
-  { surah: 67, name: 'Al-Mulk', range: '1â€“5', note: 'Read about creation and the signs in the heavens.' },
-  { surah: 93, name: 'Ad-Duha', range: '1â€“11', note: 'A reminder of care, gratitude, and kindness to others.' },
-  { surah: 94, name: 'Ash-Sharh', range: '1â€“8', note: 'Reflect on ease, perseverance, and turning to Allah.' },
-  { surah: 103, name: 'Al-Asr', range: '1â€“3', note: 'A concise reminder of faith, good deeds, truth, and patience.' },
+  { surah: 1, name: 'Al-Fatiha', range: '1–7', note: 'A short opening prayer asking Allah for guidance.' },
+  { surah: 18, name: 'Al-Kahf', range: '1–10', note: 'Begin with verses about revelation, faith, and steadfastness.' },
+  { surah: 55, name: 'Ar-Rahman', range: '1–16', note: 'Reflect on signs of creation and the blessings named in these verses.' },
+  { surah: 67, name: 'Al-Mulk', range: '1–5', note: 'Read about creation and the signs in the heavens.' },
+  { surah: 93, name: 'Ad-Duha', range: '1–11', note: 'A reminder of care, gratitude, and kindness to others.' },
+  { surah: 94, name: 'Ash-Sharh', range: '1–8', note: 'Reflect on ease, perseverance, and turning to Allah.' },
+  { surah: 103, name: 'Al-Asr', range: '1–3', note: 'A concise reminder of faith, good deeds, truth, and patience.' },
 ] as const;
 
 function nextPhotoVariant(previousVariant?: number): number {
@@ -91,7 +91,7 @@ const HOME_RECOMMENDATIONS: Array<{
   description: string;
   scene: ReadSceneType;
 }> = [
-  { id: 'sharh-duha', title: 'For anxiety & stress', description: 'Reflect on reassurance and Allahâ€™s care.', scene: 'clouds' },
+  { id: 'sharh-duha', title: 'For anxiety & stress', description: 'Reflect on reassurance and Allah’s care.', scene: 'clouds' },
   { id: 'fatiha-daily', title: '5 minutes for daily Quran', description: 'A gentle place to begin: Al-Fatiha.', scene: 'quran' },
   { id: 'daily-protection', title: 'Powerful passages', description: 'Explore Ayat al-Kursi and the closing verses.', scene: 'arch' },
   { id: 'mulk-night', title: 'Surahs before bed', description: 'Make a quiet space for a nightly reading.', scene: 'night' },
@@ -128,8 +128,6 @@ export function ReadDashboard() {
   const verseIsBookmarked = verse
     ? bookmarks.some((bookmark) => bookmark.id === `${verse.surah}:${verse.ayah.i}`)
     : false;
-
-  const [showLearnMore, setShowLearnMore] = useState(false);
 
   useEffect(() => {
     const refreshDate = () => setDailyDateKey(utcDateKey());
@@ -192,7 +190,7 @@ export function ReadDashboard() {
 
   const shareVerse = async () => {
     if (!verse) return;
-    const text = `${verse.ayah.ar}\n${verse.ayah.tr}\nâ€” ${verse.surahName} ${verse.surah}:${verse.ayah.i}`;
+    const text = `${verse.ayah.ar}\n${verse.ayah.tr}\n— ${verse.surahName} ${verse.surah}:${verse.ayah.i}`;
     try {
       if (navigator.share) await navigator.share({ title: 'Verse of the day', text });
       else await navigator.clipboard.writeText(text);
@@ -222,13 +220,13 @@ export function ReadDashboard() {
       onTouchCancel={() => { touchStartY.current = null; }}
     >
       <div className="flex items-center justify-between gap-3 px-1">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-mut">Your daily Qurâ€™an</p>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-mut">Your daily Qur’an</p>
         <button
           type="button"
           aria-label="Refresh Home photos"
           title="Refresh Home photos"
           onClick={shufflePhotos}
-          className="inline-flex min-h-9 items-center gap-1.5 rounded-full px-2.5 text-sm font-medium text-accent transition hover:bg-surface2"
+          className="inline-flex min-h-9 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium text-accent transition hover:bg-surface2"
         >
           <Icon name="refresh" size={14} />
           Refresh photos
@@ -255,21 +253,13 @@ export function ReadDashboard() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z" />
                   </svg>
                 </button>
-                <button type="button" aria-label="Share verse of the day" title="Share verse" onClick={() => void shareVerse()} className="rounded-full p-2 text-white/80 hover:bg-white/10"></button>
-  type="button"
-  aria-label="Learn more about this verse"
-  title="Learn more"
-  onClick={() => setShowLearnMore(true)}
-  className="rounded-full p-2 text-white/80 hover:bg-white/10 flex items-center justify-center gap-1.5"
->
-  <Icon name="book" size={17} />
-</button>
+                <button type="button" aria-label="Share verse of the day" title="Share verse" onClick={() => void shareVerse()} className="rounded-full p-2 text-white/80 hover:bg-white/10"><Icon name="forward" size={17} /></button>
               </div>
             </div>
             <button type="button" onClick={() => navigate(`/surah/${verse.surah}?ayah=${verse.ayah.i}`)} className="mt-1 block w-full text-left">
               <p dir="rtl" lang="ar" className="ar-uthmani text-right text-2xl leading-loose text-white">{verse.ayah.ar}</p>
               <p className="mt-2 text-sm leading-relaxed text-white/85">{verse.ayah.tr}</p>
-              <p className="mt-2 text-sm font-medium text-white/65">{verse.surahName} Â· {verse.surah}:{verse.ayah.i}</p>
+              <p className="mt-2 text-xs font-medium text-white/65">{verse.surahName} · {verse.surah}:{verse.ayah.i}</p>
             </button>
           </div>
         </article>
@@ -280,10 +270,10 @@ export function ReadDashboard() {
         <div className="absolute inset-0 bg-gradient-to-br from-black/90 via-black/70 to-emerald-950/75" />
         <div className="relative">
           <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-emerald-200">
-            Reflect &amp; act Â· {dailyTheme.title}
+            Reflect &amp; act · {dailyTheme.title}
           </p>
           <p className="mt-2 text-sm font-medium leading-relaxed">{reflection.question}</p>
-          <p className="mt-2 text-sm leading-relaxed text-white/75">
+          <p className="mt-2 text-xs leading-relaxed text-white/75">
             <span className="font-semibold text-white/90">One small step: </span>{reflection.action}
           </p>
           <button
@@ -291,7 +281,7 @@ export function ReadDashboard() {
             onClick={() => navigate(`/surah/${dailyTheme.surah}?ayah=${dailyTheme.ayah}`)}
             className="mt-3 inline-flex min-h-9 items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 text-[11px] font-medium text-white transition hover:bg-white/15"
           >
-            Qurâ€™an {dailyTheme.surah}:{dailyTheme.ayah}
+            Qur’an {dailyTheme.surah}:{dailyTheme.ayah}
             <Icon name="forward" size={13} />
           </button>
           <p className="mt-2 text-[10px] text-white/55">A personal reflection prompt, not a quoted tafsir.</p>
@@ -305,7 +295,7 @@ export function ReadDashboard() {
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-emerald-200">Daily Quran journey</p>
             <h2 className="mt-1 text-lg font-semibold">The story of {journey.title}</h2>
-            <p className="mt-1 text-sm leading-relaxed text-white/70">Read related passages, then continue with the long story and a reflection.</p>
+            <p className="mt-1 text-xs leading-relaxed text-white/70">Read related passages, then continue with the long story and a reflection.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             {journey.passages.map((passage) => (
@@ -315,7 +305,7 @@ export function ReadDashboard() {
                 onClick={() => navigate(`/surah/${passage.surah}?ayah=${passage.from}`)}
                 className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-white/15"
               >
-                Surah {passage.surah} Â· {passage.from}{passage.to && passage.to !== passage.from ? `â€“${passage.to}` : ''}
+                Surah {passage.surah} · {passage.from}{passage.to && passage.to !== passage.from ? `–${passage.to}` : ''}
               </button>
             ))}
           </div>
@@ -330,9 +320,9 @@ export function ReadDashboard() {
             onClick={(event) => {
               if (!window.confirm('Open this daily Quran journey in Mishkah?')) event.preventDefault();
             }}
-            className="inline-flex min-h-10 items-center rounded-full bg-white px-4 py-2 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-50"
+            className="inline-flex min-h-10 items-center rounded-full bg-white px-4 py-2 text-xs font-semibold text-emerald-950 transition hover:bg-emerald-50"
           >
-            Read the long story in Mishkah â†—
+            Read the long story in Mishkah ↗
           </a>
         </div>
       </article>
@@ -352,9 +342,9 @@ export function ReadDashboard() {
             </span>
             <span className="mt-0.5 block truncate text-sm font-semibold text-white">
               {lastPosition
-                ? `${lastPosition.surah}. ${lastPosition.name} Â· Ayah ${lastPosition.ayah}`
+                ? `${lastPosition.surah}. ${lastPosition.name} · Ayah ${lastPosition.ayah}`
                 : lastBookmark
-                  ? `${lastBookmark.surah}. ${lastBookmark.surahName} Â· Ayah ${lastBookmark.ayah}`
+                  ? `${lastBookmark.surah}. ${lastBookmark.surahName} · Ayah ${lastBookmark.ayah}`
                   : 'Your last reading position will appear here'}
             </span>
           </span>
@@ -366,10 +356,10 @@ export function ReadDashboard() {
         <div className="absolute inset-0 bg-gradient-to-br from-black/90 via-black/65 to-emerald-950/75" />
         <div className="relative flex items-center justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-emerald-200">This weekâ€™s surah spotlight</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-emerald-200">This week’s surah spotlight</p>
             <h2 className="mt-1 text-lg font-semibold">{weeklySurahName}</h2>
-            <p className="mt-1 text-sm leading-relaxed text-white/75">{weeklySurah.note}</p>
-            <p className="mt-2 text-[10px] font-medium text-white/55">Qurâ€™an {weeklySurah.surah}:{weeklySurah.range}</p>
+            <p className="mt-1 text-xs leading-relaxed text-white/75">{weeklySurah.note}</p>
+            <p className="mt-2 text-[10px] font-medium text-white/55">Qur’an {weeklySurah.surah}:{weeklySurah.range}</p>
           </div>
           <button
             type="button"
@@ -394,7 +384,7 @@ export function ReadDashboard() {
           <span className="mt-1 block text-base font-semibold">
             {settings.khatamPlannerEnabled ? `A gentle ${settings.khatamTargetDays}-day reading plan` : 'Make space for a complete reading'}
           </span>
-          <span className="mt-1 block text-sm text-white/70">
+          <span className="mt-1 block text-xs text-white/70">
             {settings.khatamPlannerEnabled
               ? `About ${khatamAyahsPerDay} ayahs each day`
               : 'Choose a pace that feels steady and sustainable'}
@@ -407,8 +397,8 @@ export function ReadDashboard() {
 
       <section aria-label="Quran reading recommendations">
         <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-widest text-mut">A quiet place to begin</h2>
-          <button type="button" onClick={() => navigate('/guidance')} className="text-sm font-medium text-accent hover:underline">More guidance</button>
+          <h2 className="text-xs font-semibold uppercase tracking-widest text-mut">A quiet place to begin</h2>
+          <button type="button" onClick={() => navigate('/guidance')} className="text-xs font-medium text-accent hover:underline">More guidance</button>
         </div>
         <div className="grid grid-cols-2 gap-2.5">
           {HOME_RECOMMENDATIONS.map((recommendation) => {
@@ -433,37 +423,4 @@ export function ReadDashboard() {
       </section>
     </section>
   );
-  {showLearnMore && (
-  <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-    <div className="bg-surface/90 rounded-2xl p-6 max-w-md w-full shadow-lg max-h-[80vh] overflow-y-auto">
-      <div className="flex items-center justify-between gap-2 mb-4">
-        <h3 className="text-xl font-bold text-white">Deeper Meaning</h3>
-        <button
-          type="button"
-          aria-label="Close learn more modal"
-          onClick={() => setShowLearnMore(false)}
-          className="text-white"
-        >
-          X
-        </button>
-      </div>
-      <p className="text-white/90 text-sm mb-4 line-clamp-4">{dailyTheme.explanation}</p>
-      <div className="mt-6 flex gap-4">
-        <button
-          type="button"
-          onClick={() => window.open(dailyTheme.learnMoreUrl, '_blank')}
-          className="rounded-full bg-white/90 px-4 py-2 text-black text-sm font-medium"
-        >
-          Read More Tafsir
-        </button>
-        <button
-          type="button"
-          onClick={() => window.open('https://furqan-quran-app.vercel.app', '_blank')}
-          className="rounded-full bg-white/90 px-4 py-2 text-black text-sm font-medium"
-        >
-          Open in Furqan
-        </button>
-      </div>
-    </div>
-  </div>
-)}
+}

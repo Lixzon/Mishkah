@@ -28,7 +28,7 @@ import {
   setVoiceLanguage,
   setReadingMode,
   setAudioSyncOffset,
-  setAssistantLayout,
+  
   setNotificationPreference,
   setReminderTime,
   setDailyReadingGoalMinutes,
@@ -44,13 +44,13 @@ import {
 import { clearAllProgress, devAddStreakDays, devResetStreak, devSetStreak, setIstiqamahGoal } from '../store/slices/progressSlice';
 import { BADGE_TONES, ISTIQAMAH_MILESTONES, TIERS, TOTAL_QURAN_AYAHS, isTierUnlocked, tierProgress } from '../lib/progression';
 import {
-  AI_UI_FEATURES,
-  AI_UI_LOCKED_TEXT,
-  AI_UI_UNLOCK_DAYS,
-  ASSISTANT_LAYOUTS,
+  
+  
+  
+  
   CUSTOM_READING_THEMES,
   READING_THEMES_UNLOCK_DAYS,
-  isAiUiUnlocked,
+  
   isReadingThemesUnlocked,
   isThemeSelectable,
   lockedText,
@@ -103,7 +103,6 @@ export default function SettingsPage() {
 
   const streak = progress.progression.currentStreak;
   const readingThemesUnlocked = isReadingThemesUnlocked(streak);
-  const aiUiUnlocked = isAiUiUnlocked(streak);
 
   // Sepia is one of the gated reading themes, so it only joins the free picker
   // once the milestone is reached — or while it is the theme in use, so the
@@ -352,49 +351,45 @@ export default function SettingsPage() {
         </div>
       </Card>
 
-      {/* ---- AI UI customization (365-day milestone) ---- */}
-      <Section title="AI UI Customization" icon="sparkle" />
+      
+      <Section title="" icon="sparkle" />
       <Card>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="inline-flex items-center gap-2 text-sm font-medium text-ink">
+            
               <Icon
-                name={aiUiUnlocked ? 'unlock' : 'lock'}
+                
                 size={15}
-                className={aiUiUnlocked ? 'text-accent' : 'text-mut'}
+                className="text-mut"
               />
-              {aiUiUnlocked ? 'Unlocked' : 'Locked'}
+              
             </div>
-            <div className="mt-0.5 text-xs text-mut">
-              {aiUiUnlocked
-                ? 'Dynamic Quran Assistant layouts and custom themes are available.'
-                : AI_UI_FEATURES.map((feature) => feature.label).join(' · ')}
-            </div>
+            
           </div>
           <div className="shrink-0 text-right">
             <div className="text-2xl font-bold tabular-nums text-ink">
-              {Math.min(streak, AI_UI_UNLOCK_DAYS)}
+              
             </div>
             <div className="text-[10px] font-semibold uppercase tracking-widest text-mut">
-              / {AI_UI_UNLOCK_DAYS} days
+              
             </div>
           </div>
         </div>
 
-        {!aiUiUnlocked && (
+        
           <>
             <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface2">
               <div
                 className="h-full rounded-full bg-accent/70"
-                style={{ width: `${unlockProgress(streak, AI_UI_UNLOCK_DAYS).ratio * 100}%` }}
+                style={{ width: `${unlockProgress(streak).ratio * 100}%` }}
               />
             </div>
             <p className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-surface2 px-2.5 py-1.5 text-[11px] font-medium text-mut">
               <Icon name="lock" size={13} />
-              {AI_UI_LOCKED_TEXT}
+              
             </p>
             <ul className="mt-3 space-y-2">
-              {AI_UI_FEATURES.map((feature) => (
+              
                 <li key={feature.id} className="flex items-start gap-2">
                   <Icon name="lock" size={13} className="mt-0.5 shrink-0 text-mut" />
                   <span className="min-w-0">
@@ -407,18 +402,20 @@ export default function SettingsPage() {
           </>
         )}
 
-        {aiUiUnlocked && (
+        
           <>
             <div className="mt-4">
               <div className="mb-1 text-xs font-medium text-mut">Dynamic Quran Assistant layouts</div>
               <Segmented
                 value={settings.assistantLayout}
-                onChange={(value) => dispatch(setAssistantLayout(value))}
-                options={ASSISTANT_LAYOUTS.map((layout) => ({ value: layout.id, label: layout.label }))}
+                onChange={(value) => dispatch(resetSettings)}
+                options={[
+  { value: 'classic', label: 'Classic' }
+]}
                 size="sm"
               />
               <p className="mt-1.5 text-[11px] leading-relaxed text-mut">
-                {ASSISTANT_LAYOUTS.find((layout) => layout.id === settings.assistantLayout)?.description}
+                {settings.assistantLayout === 'classic' ? 'Classic layout' : 'Custom layout'}
               </p>
             </div>
             <div className="mt-4 border-t border-line pt-3">

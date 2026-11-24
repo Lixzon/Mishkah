@@ -113,7 +113,8 @@ export default function NamesOfAllahPage() {
     if (!audioRef.current) return;
 
     const handleTimeUpdate = () => {
-      const currentTime = audioRef.current.currentTime;
+      const currentTime = audioRef.current?.currentTime;
+      if (!currentTime) return;
       const activeTimestamp = namesTimestamps.find(
         (ts) => currentTime >= ts.startTime && currentTime < ts.startTime + 3
       );

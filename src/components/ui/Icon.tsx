@@ -65,6 +65,11 @@ const S = (props: { children: ReactElement[] | ReactElement; fill?: boolean }) =
 );
 
 const ICONS: Record<IconName, ReactElement> = {
+  star: (
+    <S>
+      <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.57l-6.18 3.21L5 10.87 11.27 2 12 2z" />
+    </S>
+  ),
   play: (
     <path d="M8 5.5v13l11-6.5z" fill="currentColor" stroke="none" />
   ),

@@ -77,7 +77,7 @@ export default function ProfilePage() {
               <div className="text-[11px] text-mut">Your journey of consistency</div>
             </div>
           </div>
-          <Icon name="chevron-right" size={16} className="ml-auto text-mut" />
+          <Icon name="chevronRight" size={16} className="ml-auto text-mut" />
         </div>
       </div>
 

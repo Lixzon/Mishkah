@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useAppSelector } from '../../store';
 import { accentHex } from '../../lib/constants';
 import { customAccentVars } from '../../lib/customTheme';
-import { isAiUiUnlocked } from '../../lib/unlocks';
+
 import type { ThemeMode } from '../../types';
 
 /** Themes built on a dark palette, so `color-scheme` and on-accent ink follow. */
@@ -33,13 +33,11 @@ export function ThemeManager() {
       root.dataset.fontFamily = fontFamily;
       root.dataset.reducedMotion = String(reducedMotion);
 
-      // The 365-day Istiqamah milestone gates the advanced UI. While it is not
-      // held, the custom accent is dropped and the layout falls back to classic,
-      // so a choice made while unlocked is never applied out of gate.
-      const aiUnlocked = isAiUiUnlocked(streak);
-      root.dataset.assistantLayout = aiUnlocked ? assistantLayout : 'classic';
+      // The layout falls back to classic when not explicitly set,
+      // and custom accents are not applied outside the AI UI gate.
+      root.dataset.assistantLayout = assistantLayout;
 
-      const custom = aiUnlocked && customAccent ? customAccentVars(customAccent) : null;
+      const custom = customAccent ? customAccentVars(customAccent) : null;
       if (custom) {
         // Inline custom properties outrank the [data-accent] palette rules,
         // which is exactly what a reader-built accent needs.

@@ -1,4 +1,4 @@
-import type { AssistantLayout, ThemeMode } from '../types';
+import type { ThemeMode } from '../types';
 
 /**
  * Istiqamah milestone unlocks.
@@ -56,22 +56,22 @@ export interface AiUiFeature {
 
 /** One milestone row in the tracker modal and the Settings locks. */
 
-export const MILESTONE_UNLOCKS: MilestoneUnlock[] = [
-  {
-    id: 'reading-themes',
-    days: READING_THEMES_UNLOCK_DAYS,
-    title: 'Custom Reading Themes',
-    summary: 'Sepia, Midnight Blue and Emerald reading themes.',
-    features: CUSTOM_READING_THEMES.map((theme) => `${theme.label} reading theme`),
-  },
-  {
-    id: 'ai-ui',
-    days: AI_UI_UNLOCK_DAYS,
-    title: 'Advanced AI UI Customization',
-    summary: 'Dynamic Quran Assistant layouts and custom themes.',
-    features: AI_UI_FEATURES.map((feature) => feature.label),
-  },
-];
+// export const MILESTONE_UNLOCKS: MilestoneUnlock[] = [
+//   {
+//     id: 'reading-themes',
+//     days: READING_THEMES_UNLOCK_DAYS,
+//     title: 'Custom Reading Themes',
+//     summary: 'Sepia, Midnight Blue and Emerald reading themes.',
+//     features: CUSTOM_READING_THEMES.map((theme) => `${theme.label} reading theme`),
+//   },
+//   {
+//     id: 'ai-ui',
+//     days: AI_UI_UNLOCK_DAYS,
+//     title: 'Advanced AI UI Customization',
+//     summary: 'Dynamic Quran Assistant layouts and custom themes.',
+//     features: AI_UI_FEATURES.map((feature) => feature.label),
+//   },
+// ];
 
 /**
  * The exact lock copy shown on a gated feature. Kept as a function (and
@@ -83,7 +83,7 @@ export function lockedText(days: number): string {
 }
 
 /** The copy the 365-day AI UI features must show while locked. */
-export const AI_UI_LOCKED_TEXT = lockedText(AI_UI_UNLOCK_DAYS);
+// export const AI_UI_LOCKED_TEXT = lockedText(AI_UI_UNLOCK_DAYS);
 
 export interface UnlockProgress {
   unlocked: boolean;

@@ -10,15 +10,15 @@ export interface DailyQhdTheme {
   learnMoreUrl?: string;
 }
 
-const BASE_THEMES: readonly DailyQhdTheme[] = [
-  { id: 'remembrance', title: 'Remembering Allah', globalAyah: 193, surah: 2, ayah: 186 },
-  { id: 'mercy', title: 'Allah’s mercy', globalAyah: 843, surah: 6, ayah: 54 },
-  { id: 'prayer', title: 'The care of prayer', globalAyah: 3385, surah: 29, ayah: 45 },
-  { id: 'forgiveness', title: 'Returning for forgiveness', globalAyah: 4111, surah: 39, ayah: 53 },
-  { id: 'charity', title: 'Giving good generously', globalAyah: 268, surah: 2, ayah: 261 },
-  { id: 'character', title: 'Good character', globalAyah: 1991, surah: 16, ayah: 90 },
-  { id: 'gratitude', title: 'Gratitude and provision', globalAyah: 1757, surah: 14, ayah: 7 },
-];
+// const BASE_THEMES: readonly DailyQhdTheme[] = [
+//   { id: 'remembrance', title: 'Remembering Allah', globalAyah: 193, surah: 2, ayah: 186 },
+//   { id: 'mercy', title: 'Allah’s mercy', globalAyah: 843, surah: 6, ayah: 54 },
+//   { id: 'prayer', title: 'The care of prayer', globalAyah: 3385, surah: 29, ayah: 45 },
+//   { id: 'forgiveness', title: 'Returning for forgiveness', globalAyah: 4111, surah: 39, ayah: 53 },
+//   { id: 'charity', title: 'Giving good generously', globalAyah: 268, surah: 2, ayah: 261 },
+//   { id: 'character', title: 'Good character', globalAyah: 1991, surah: 16, ayah: 90 },
+//   { id: 'gratitude', title: 'Gratitude and provision', globalAyah: 1757, surah: 14, ayah: 7 },
+// ];
 
 // 30-day rotation themes (cycle through based on day of month)
 // Each day gets a theme, repeating every 30 days
@@ -100,7 +100,6 @@ const FRIDAY_THEME: DailyQhdTheme = {
   id: 'jumuah',
   title: 'Friday Blessings',
   globalAyah: 182, surah: 18, ayah: 1,
-  title: 'Friday Blessings',
   explanation: 'A special theme for Friday, the best day of the week, focusing on blessings and preparation for the weekend.',
   learnMoreUrl: 'https://quran.com/18',
 };
