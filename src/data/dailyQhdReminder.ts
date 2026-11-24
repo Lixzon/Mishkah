@@ -25,9 +25,9 @@ const BASE_THEMES: readonly DailyQhdTheme[] = [
 export const DAILY_QHD_THEMES: readonly DailyQhdTheme[] = [
   // Day 1-5: Base themes
   { id: 'remembrance', title: 'Remembering Allah', globalAyah: 193, surah: 2, ayah: 186,
-    explanation: 'This verse reminds us of Allah's command to remember Him consistently, establishing the connection between the believer and their Creator.',
+    explanation: "This verse reminds us of Allah's command to remember Him consistently, establishing the connection between the believer and their Creator.",
     learnMoreUrl: 'https://quran.com/2' },
-  { id: 'mercy', title: 'Allah’s mercy', globalAyah: 843, surah: 6, ayah: 54,
+  { id: 'mercy', title: 'Allah\'s mercy', globalAyah: 843, surah: 6, ayah: 54,
     explanation: 'This verse speaks to the vastness of Allah’s mercy, encompassing all things and encouraging believers to seek His forgiveness and grace.',
     learnMoreUrl: 'https://quran.com/6' },
   { id: 'prayer', title: 'The care of prayer', globalAyah: 3385, surah: 29, ayah: 45,
