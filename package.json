@@ -3,6 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "main": "index.js",
   "description": "Furqan — The Seeker who carries the Light of Guidance across horizons.",
   "scripts": {
     "dev": "vite",
