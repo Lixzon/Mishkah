@@ -408,7 +408,7 @@ export default function SettingsPage() {
               <div className="mb-1 text-xs font-medium text-mut">Dynamic Quran Assistant layouts</div>
               <Segmented
                 value={settings.assistantLayout}
-                onChange={(value) => dispatch(resetSettings)}
+                onChange={(value) => dispatch(resetSettings)} /* removed AI */
                 options={[
   { value: 'classic', label: 'Classic' }
 ]}
@@ -416,6 +416,7 @@ export default function SettingsPage() {
               />
               <p className="mt-1.5 text-[11px] leading-relaxed text-mut">
                 {settings.assistantLayout === 'classic' ? 'Classic layout' : 'Custom layout'}
+/* AI UI removed */
               </p>
             </div>
             <div className="mt-4 border-t border-line pt-3">

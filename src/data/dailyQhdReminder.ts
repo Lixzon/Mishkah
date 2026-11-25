@@ -98,7 +98,6 @@ export const DAILY_QHD_THEMES: readonly DailyQhdTheme[] = [
 // Friday theme focuses on special blessings and preparation for weekend
 const FRIDAY_THEME: DailyQhdTheme = {
   id: 'jumuah',
-  title: 'Friday Blessings',
   globalAyah: 182, surah: 18, ayah: 1,
   explanation: 'A special theme for Friday, the best day of the week, focusing on blessings and preparation for the weekend.',
   learnMoreUrl: 'https://quran.com/18',
